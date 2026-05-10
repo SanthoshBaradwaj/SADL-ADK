@@ -1,0 +1,11 @@
+.git/
+node_modules/
+coverage/
+.cache/
+.sadl-cache/
+
+# Local-only generated artifacts
+*.tgz
+npm-debug.log*
+
+# Keep template dotfiles such as templates/project/.gitignore.

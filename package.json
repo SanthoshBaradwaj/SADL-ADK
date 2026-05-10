@@ -4,8 +4,8 @@
   "description": "Stateless AI Development Lifecycle kit: repo-native templates, validation, checkpoints, and handoff logs for AI coding sessions.",
   "type": "commonjs",
   "bin": {
-    "sadl": "./bin/sadl.js",
-    "create-sadl-project": "./bin/create-sadl-project.js"
+    "sadl": "bin/sadl.js",
+    "create-sadl-project": "bin/create-sadl-project.js"
   },
   "scripts": {
     "test": "node tests/sadl-cli.test.js",

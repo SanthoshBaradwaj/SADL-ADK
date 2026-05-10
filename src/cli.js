@@ -492,7 +492,8 @@ function copyTree(sourceDir, targetDir, options) {
 
   for (const item of fs.readdirSync(sourceDir, { withFileTypes: true })) {
     const sourcePath = path.join(sourceDir, item.name);
-    const targetPath = path.join(targetDir, item.name);
+    const targetName = item.name === "gitignore.template" ? ".gitignore" : item.name;
+    const targetPath = path.join(targetDir, targetName);
     if (item.isDirectory()) {
       ensureDir(targetPath);
       const nested = copyTree(sourcePath, targetPath, options);
