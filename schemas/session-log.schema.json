@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/session-log.schema.json",
+  "title": "SADL Session Log",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sessionId",
+    "endedAt",
+    "model",
+    "assistant",
+    "task",
+    "status",
+    "blocker",
+    "nextAction",
+    "filesChanged"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "startedAt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "endedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "model": {
+      "type": "string"
+    },
+    "assistant": {
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "DONE",
+        "WIP",
+        "BLOCKED",
+        "FAILED_TESTS",
+        "NEEDS_REVIEW",
+        "WAITING_FOR_APPROVAL",
+        "DONE_COMMITTED",
+        "WIP_CHECKPOINTED",
+        "BLOCKED_WITH_STATE"
+      ]
+    },
+    "blocker": {
+      "type": "string"
+    },
+    "nextAction": {
+      "type": "string"
+    },
+    "approvalsRequested": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "waitingMinutes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "commandsRun": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "filesChanged": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation": {
+      "type": "string"
+    },
+    "commitHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}

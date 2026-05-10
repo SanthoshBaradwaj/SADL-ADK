@@ -1,0 +1,86 @@
+{
+  "$schema": "https://sadl.dev/schemas/sadl-config.schema.json",
+  "schemaVersion": "1.0",
+  "sadlVersion": "__SADL_VERSION__",
+  "profile": "__SADL_PROFILE__",
+  "protectedPaths": [
+    "AGENTS.md",
+    ".agent_rules.md",
+    ".sadl.config.json",
+    "docs/01_PRD.md",
+    "docs/04_ARCH_SPEC.md"
+  ],
+  "writablePaths": [
+    "src",
+    "tests",
+    "docs/02_ROADMAP.md",
+    "docs/03_STATE.md",
+    "docs/05_SESSION_LOG.md",
+    "docs/session_logs",
+    "docs/decisions"
+  ],
+  "roadmapStates": [
+    "TODO",
+    "WIP",
+    "DONE",
+    "BLOCKED",
+    "FAILED_TESTS",
+    "NEEDS_REVIEW",
+    "WAITING_FOR_APPROVAL",
+    "SPLIT_REQUIRED",
+    "ABANDONED"
+  ],
+  "sessionExitStates": [
+    "DONE_COMMITTED",
+    "WIP_CHECKPOINTED",
+    "BLOCKED_WITH_STATE",
+    "WAITING_FOR_APPROVAL"
+  ],
+  "validation": {
+    "lint": [],
+    "test": [],
+    "typecheck": [],
+    "build": []
+  },
+  "toolBudgets": {
+    "maxSearchCommandsPerAudit": 10,
+    "maxRepeatedCommand": 2,
+    "maxFailedTestRetries": 3,
+    "maxNoProgressMinutes": 10,
+    "approvalWaitMode": "pause"
+  },
+  "tokenPolicy": {
+    "hostManaged": true,
+    "handoffThresholdPercent": 85,
+    "reserveFinalPercent": 10
+  },
+  "modelPolicy": {
+    "planner": "user-configured",
+    "coder": "user-configured",
+    "reviewer": "user-configured",
+    "fallbackChain": [],
+    "switchOnlyAtCheckpoints": true
+  },
+  "approvalPolicy": {
+    "requireHumanFor": [
+      "architecture_change",
+      "production_deploy",
+      "secret_access",
+      "merge_conflict",
+      "protected_file_change"
+    ]
+  },
+  "commitPolicy": {
+    "requireCommitWhenValidationPasses": true,
+    "allowCheckpointWithoutCommit": true,
+    "defaultBranchPrefix": "sadl/task-"
+  },
+  "secretPolicy": {
+    "allowAgentsToReadEnvValues": false,
+    "allowedSecretMetadataFiles": [
+      ".env.example",
+      "docs/setup-env.md"
+    ],
+    "redactSessionLogs": true
+  }
+}

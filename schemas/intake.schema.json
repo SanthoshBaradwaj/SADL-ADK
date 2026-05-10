@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/intake.schema.json",
+  "title": "SADL Project Intake",
+  "type": "object",
+  "required": [
+    "productIntent",
+    "targetUsers",
+    "mvpScope",
+    "nonGoals",
+    "acceptanceCriteria",
+    "technicalPreferences",
+    "validationCommands",
+    "secretNames"
+  ],
+  "properties": {
+    "productIntent": {
+      "type": "string",
+      "minLength": 20
+    },
+    "targetUsers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "mvpScope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "nonGoals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "technicalPreferences": {
+      "type": "object"
+    },
+    "validationCommands": {
+      "type": "object",
+      "properties": {
+        "lint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "test": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "typecheck": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "build": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "secretNames": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    },
+    "agentPolicy": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,26 @@
+# Dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.sadl-cache/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+

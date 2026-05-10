@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/sadl-config.schema.json",
+  "title": "SADL Config",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "profile",
+    "protectedPaths",
+    "writablePaths",
+    "roadmapStates",
+    "validation",
+    "toolBudgets",
+    "tokenPolicy",
+    "modelPolicy",
+    "approvalPolicy",
+    "commitPolicy",
+    "secretPolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sadlVersion": {
+      "type": "string"
+    },
+    "profile": {
+      "enum": [
+        "lite",
+        "standard",
+        "enterprise"
+      ]
+    },
+    "protectedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "writablePaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "roadmapStates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sessionExitStates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "lint": {
+          "$ref": "#/$defs/commandList"
+        },
+        "test": {
+          "$ref": "#/$defs/commandList"
+        },
+        "typecheck": {
+          "$ref": "#/$defs/commandList"
+        },
+        "build": {
+          "$ref": "#/$defs/commandList"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/commandList"
+      }
+    },
+    "toolBudgets": {
+      "type": "object",
+      "required": [
+        "maxSearchCommandsPerAudit",
+        "maxRepeatedCommand",
+        "maxFailedTestRetries",
+        "maxNoProgressMinutes",
+        "approvalWaitMode"
+      ],
+      "properties": {
+        "maxSearchCommandsPerAudit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxRepeatedCommand": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxFailedTestRetries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxNoProgressMinutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approvalWaitMode": {
+          "enum": [
+            "pause",
+            "continue_read_only",
+            "stop_session"
+          ]
+        }
+      }
+    },
+    "tokenPolicy": {
+      "type": "object",
+      "required": [
+        "hostManaged",
+        "handoffThresholdPercent",
+        "reserveFinalPercent"
+      ],
+      "properties": {
+        "hostManaged": {
+          "type": "boolean"
+        },
+        "handoffThresholdPercent": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 95
+        },
+        "reserveFinalPercent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 40
+        }
+      }
+    },
+    "modelPolicy": {
+      "type": "object",
+      "properties": {
+        "planner": {
+          "type": "string"
+        },
+        "coder": {
+          "type": "string"
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "fallbackChain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "switchOnlyAtCheckpoints": {
+          "type": "boolean"
+        }
+      }
+    },
+    "approvalPolicy": {
+      "type": "object",
+      "properties": {
+        "requireHumanFor": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "commitPolicy": {
+      "type": "object",
+      "properties": {
+        "requireCommitWhenValidationPasses": {
+          "type": "boolean"
+        },
+        "allowCheckpointWithoutCommit": {
+          "type": "boolean"
+        },
+        "defaultBranchPrefix": {
+          "type": "string"
+        }
+      }
+    },
+    "secretPolicy": {
+      "type": "object",
+      "properties": {
+        "allowAgentsToReadEnvValues": {
+          "type": "boolean"
+        },
+        "allowedSecretMetadataFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "redactSessionLogs": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "commandList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

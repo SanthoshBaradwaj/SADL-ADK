@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/roadmap.schema.json",
+  "title": "SADL Roadmap States",
+  "type": "object",
+  "properties": {
+    "states": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "TODO",
+          "WIP",
+          "DONE",
+          "BLOCKED",
+          "FAILED_TESTS",
+          "NEEDS_REVIEW",
+          "WAITING_FOR_APPROVAL",
+          "SPLIT_REQUIRED",
+          "ABANDONED"
+        ]
+      }
+    }
+  }
+}
