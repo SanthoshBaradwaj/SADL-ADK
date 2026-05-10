@@ -5,23 +5,20 @@ SADL should make prototypes faster, not heavier. Use the smallest profile and on
 ## Fastest Path
 
 ```bash
-npx create-sadl-project@latest prototype-app
+npx create-sadl-project prototype-app
 cd prototype-app
-npx --package create-sadl-project@latest sadl intake . --write
-npx --package create-sadl-project@latest sadl plan . --write
-npx --package create-sadl-project@latest sadl policy . --apply solo
-npx --package create-sadl-project@latest sadl validate .
+npx --package create-sadl-project sadl intake . --write
+npx --package create-sadl-project sadl plan . --write
+npx --package create-sadl-project sadl policy . --apply solo
+npx --package create-sadl-project sadl validate .
 ```
 
-For the `next` prerelease line:
+To force the stable rollback line:
 
 ```bash
-npx create-sadl-project@next prototype-app
+npx create-sadl-project@stable prototype-app
 cd prototype-app
-npx --package create-sadl-project@next sadl intake . --write
-npx --package create-sadl-project@next sadl plan . --write
-npx --package create-sadl-project@next sadl policy . --apply solo
-npx --package create-sadl-project@next sadl validate .
+npx --package create-sadl-project@stable sadl validate .
 ```
 
 Then give any AI coding assistant this prompt:

@@ -84,42 +84,47 @@ node tests/sadl-cli.test.js
 
 SADL is published on npm as `create-sadl-project`:
 
-Zero-install usage:
+Current npm channels:
+
+```text
+latest: 0.2.0-next.0
+next:   0.2.0-next.0
+stable: 0.1.1
+```
+
+Zero-install usage for the current default build:
 
 ```bash
-npx create-sadl-project@latest my-app
+npx create-sadl-project my-app
 cd my-app
-npx --package create-sadl-project@latest sadl validate .
-npx --package create-sadl-project@latest sadl start .
+npx --package create-sadl-project sadl validate .
+npx --package create-sadl-project sadl start .
 ```
 
 Optional global install:
 
 ```bash
-npm install -g create-sadl-project@latest
+npm install -g create-sadl-project
 create-sadl-project my-app
 cd my-app
 sadl validate .
 sadl start .
 ```
 
-This repository currently tracks the next development release. The advanced prototype commands below require `0.2.0-next.0` or later. After publishing it with the `next` tag, test it with:
+Stable rollback channel:
 
 ```bash
-npx create-sadl-project@next prototype-app
+npx create-sadl-project@stable my-app
 cd prototype-app
-npx --package create-sadl-project@next sadl intake . --write
-npx --package create-sadl-project@next sadl plan . --write
-npx --package create-sadl-project@next sadl policy . --apply solo
-npx --package create-sadl-project@next sadl validate .
+npx --package create-sadl-project@stable sadl validate .
 ```
 
 For an existing repository:
 
 ```bash
 cd existing-project
-npx --package create-sadl-project@latest sadl adopt .
-npx --package create-sadl-project@latest sadl validate .
+npx --package create-sadl-project sadl adopt .
+npx --package create-sadl-project sadl validate .
 ```
 
 ## Core Commands
@@ -212,6 +217,153 @@ BLOCKED_WITH_STATE
 WAITING_FOR_APPROVAL
 ```
 
+## PRD Input Modes
+
+SADL supports three PRD intake patterns.
+
+### Guided Intake Wizard
+
+Best for prototypes and users who do not want to hand-write a full PRD:
+
+```bash
+npx --package create-sadl-project sadl intake . --write
+```
+
+This writes:
+
+```text
+docs/01_PRD.md
+docs/04_ARCH_SPEC.md
+.env.example
+docs/setup-env.md
+.sadl.config.json validation commands
+```
+
+### Structured JSON Intake
+
+Best for automation, product forms, hosted onboarding, or another app generating SADL inputs:
+
+```bash
+npx --package create-sadl-project sadl intake . --from-json intake.json
+```
+
+The JSON is validated against `schemas/intake.schema.json`.
+
+### Manual PRD Upload Or Edit
+
+Best for teams that already have a PRD or architecture document:
+
+```text
+docs/01_PRD.md
+docs/04_ARCH_SPEC.md
+```
+
+After editing manually:
+
+```bash
+npx --package create-sadl-project sadl validate . --strict
+npx --package create-sadl-project sadl plan . --write
+```
+
+The PRD defines intent. The architecture spec defines technical boundaries. The roadmap turns both into small tasks.
+
+## AI Workflow Configuration
+
+SADL supports a common pattern for all AI coding assistants:
+
+```text
+Read AGENTS.md.
+Read .sadl.config.json.
+Read docs/03_STATE.md.
+Read the active item in docs/02_ROADMAP.md.
+Read relevant parts of docs/04_ARCH_SPEC.md.
+Work only on the active task.
+Validate.
+Checkpoint.
+Commit if valid.
+```
+
+User preferences live in `.sadl.config.json`:
+
+```json
+{
+  "modelPolicy": {
+    "planner": "user-configured",
+    "coder": "user-configured",
+    "reviewer": "user-configured",
+    "fallbackChain": [],
+    "switchOnlyAtCheckpoints": true
+  },
+  "tokenPolicy": {
+    "hostManaged": true,
+    "handoffThresholdPercent": 85,
+    "reserveFinalPercent": 10
+  },
+  "approvalPolicy": {
+    "requireHumanFor": [
+      "architecture_change",
+      "production_deploy",
+      "secret_access",
+      "merge_conflict",
+      "protected_file_change"
+    ]
+  }
+}
+```
+
+Current implementation:
+
+- SADL records preferred planner/coder/reviewer roles in config.
+- SADL records fallback-chain intent in config.
+- SADL supports adapter files for common assistants.
+- SADL supports branch/worktree helpers for multi-agent work.
+- SADL supports `WAITING_FOR_APPROVAL` and `BLOCKED` handoff states.
+- SADL does not currently run a daemon that watches token usage live.
+- SADL does not currently auto-launch Claude, Codex, Gemini, or other agents.
+- SADL does not currently perform automatic model routing.
+
+The current handoff is checkpoint-driven, not daemon-driven. If all AI sessions are done, the repo remains resumable because `docs/03_STATE.md`, `docs/02_ROADMAP.md`, and Git contain the handoff. A future host adapter, MCP server, IDE extension, or CI integration can watch usage and trigger handoffs automatically.
+
+## Supported AI Assistants
+
+SADL is assistant-agnostic. It works with any AI coding assistant that can read/write files and follow repository instructions.
+
+Current adapter command:
+
+```bash
+npx --package create-sadl-project sadl adapter . --tool claude-code
+npx --package create-sadl-project sadl adapter . --tool cursor
+npx --package create-sadl-project sadl adapter . --tool codex
+npx --package create-sadl-project sadl adapter . --tool gemini
+npx --package create-sadl-project sadl adapter . --tool github-copilot
+npx --package create-sadl-project sadl adapter . --tool generic-cli
+```
+
+Supported pattern today:
+
+- Codex / OpenAI coding agents: use `AGENTS.md` directly.
+- Claude Code: generate `CLAUDE.md` and rely on Claude project memory/hooks/subagents where configured by the user.
+- Cursor: generate `.cursor/rules/sadl.mdc`.
+- Gemini or generic CLI agents: generate assistant-specific instruction files.
+- GitHub Copilot coding agent: generate `.github/copilot-instructions.md`.
+
+Multi-agent usage is supported as a repository workflow:
+
+```bash
+npx --package create-sadl-project sadl branch . --task "1.1 Auth UI"
+npx --package create-sadl-project sadl worktree . --task "1.2 Billing webhook" --dir ../billing-webhook
+```
+
+Rules:
+
+- one coordinator owns roadmap/state
+- one branch or worktree per worker
+- no two agents edit the same source file in parallel
+- each worker validates and checkpoints
+- humans approve architecture changes, production deploys, and merge conflicts
+
+Automatic agentic handoff across multiple running AI products is not implemented in the CLI yet. The common configuration pattern is present; the automated orchestrator is future host work.
+
 ## How To Use SADL With Any AI Coding Assistant
 
 Paste this as the starting instruction:
@@ -254,41 +406,41 @@ The commit command runs SADL validation first and refuses to commit when hard fa
 For fast prototypes, use the smallest useful loop:
 
 ```bash
-npx create-sadl-project@next prototype-app
+npx create-sadl-project prototype-app
 cd prototype-app
-npx --package create-sadl-project@next sadl intake . --write
-npx --package create-sadl-project@next sadl plan . --write
-npx --package create-sadl-project@next sadl policy . --apply solo
-npx --package create-sadl-project@next sadl validate .
+npx --package create-sadl-project sadl intake . --write
+npx --package create-sadl-project sadl plan . --write
+npx --package create-sadl-project sadl policy . --apply solo
+npx --package create-sadl-project sadl validate .
 ```
 
 Then hand the repo to your AI assistant with the SADL prompt. When the session ends:
 
 ```bash
-npx --package create-sadl-project@next sadl checkpoint . --task "1.1 First MVP slice" --status DONE --validation "passed"
-npx --package create-sadl-project@next sadl dashboard .
+npx --package create-sadl-project sadl checkpoint . --task "1.1 First MVP slice" --status DONE --validation "passed"
+npx --package create-sadl-project sadl dashboard .
 ```
 
 For a SaaS prototype:
 
 ```bash
-npx --package create-sadl-project@next sadl policy . --apply startup-saas
-npx --package create-sadl-project@next sadl ci .
+npx --package create-sadl-project sadl policy . --apply startup-saas
+npx --package create-sadl-project sadl ci .
 ```
 
 For parallel agent work:
 
 ```bash
-npx --package create-sadl-project@next sadl branch . --task "1.2 Auth UI"
-npx --package create-sadl-project@next sadl worktree . --task "1.3 Billing webhook" --dir ../billing-webhook
+npx --package create-sadl-project sadl branch . --task "1.2 Auth UI"
+npx --package create-sadl-project sadl worktree . --task "1.3 Billing webhook" --dir ../billing-webhook
 ```
 
 For assistant-specific setup:
 
 ```bash
-npx --package create-sadl-project@next sadl adapter . --tool claude-code
-npx --package create-sadl-project@next sadl adapter . --tool cursor
-npx --package create-sadl-project@next sadl adapter . --tool github-copilot
+npx --package create-sadl-project sadl adapter . --tool claude-code
+npx --package create-sadl-project sadl adapter . --tool cursor
+npx --package create-sadl-project sadl adapter . --tool github-copilot
 ```
 
 ## Current Capability Boundary
@@ -314,6 +466,8 @@ Planned but not implemented yet:
 - native IDE extensions
 - hosted dashboard
 - true model routing
+- live token/usage watcher
+- automatic AI session launch/resume
 - automatic complex merge conflict resolution
 - autonomous production deploys
 
@@ -530,6 +684,21 @@ SADL improves:
 - Reviewable self-improvement.
 
 SADL does not replace Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot, Devin, CI, GitHub, or human review. It gives them a shared operating layer.
+
+## Similar Products And Adjacent Tools
+
+SADL overlaps with, but does not replace:
+
+- AGENTS.md: a common file convention for coding-agent instructions.
+- GitHub Spec Kit: spec-driven development focused on turning specs into implementation plans.
+- Kiro: an agentic IDE with specs, steering, hooks, and MCP support.
+- OpenAI Codex: a coding agent that can work in local/cloud environments and use repository instructions.
+- Claude Code: a coding agent with project memory, hooks, and subagents.
+- Cursor: an AI IDE with rules, memories, and background agents.
+- GitHub Copilot coding agent: a GitHub-native background coding agent that opens PRs.
+- Devin: an autonomous software engineering agent with knowledge/session features.
+
+SADL's niche is the portable lifecycle layer across those tools: PRD, architecture spec, roadmap, state, checkpoints, validation, policy packs, and session logs stored in the repository.
 
 ## Project Maturity Profiles
 

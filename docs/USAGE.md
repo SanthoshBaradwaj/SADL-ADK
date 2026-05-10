@@ -31,9 +31,9 @@ npx --package create-sadl-project@latest sadl start .
 For guided setup:
 
 ```bash
-npx --package create-sadl-project@next sadl intake . --write
-npx --package create-sadl-project@next sadl plan . --write
-npx --package create-sadl-project@next sadl policy . --apply solo
+npx --package create-sadl-project sadl intake . --write
+npx --package create-sadl-project sadl plan . --write
+npx --package create-sadl-project sadl policy . --apply solo
 ```
 
 ## Existing Project
@@ -86,24 +86,24 @@ The commit command refuses to commit if SADL validation has hard failures.
 Run configured commands from `.sadl.config.json`:
 
 ```bash
-npx --package create-sadl-project@next sadl run . --category test
-npx --package create-sadl-project@next sadl validate . --run
+npx --package create-sadl-project sadl run . --category test
+npx --package create-sadl-project sadl validate . --run
 ```
 
 ## CI, Dashboard, And Adapters
 
 ```bash
-npx --package create-sadl-project@next sadl ci .
-npx --package create-sadl-project@next sadl dashboard .
-npx --package create-sadl-project@next sadl adapter . --tool cursor
-npx --package create-sadl-project@next sadl adapter . --tool claude-code
+npx --package create-sadl-project sadl ci .
+npx --package create-sadl-project sadl dashboard .
+npx --package create-sadl-project sadl adapter . --tool cursor
+npx --package create-sadl-project sadl adapter . --tool claude-code
 ```
 
 ## Multi-Agent Helpers
 
 ```bash
-npx --package create-sadl-project@next sadl branch . --task "1.1 Auth UI"
-npx --package create-sadl-project@next sadl worktree . --task "1.2 Billing webhook" --dir ../billing-webhook
+npx --package create-sadl-project sadl branch . --task "1.1 Auth UI"
+npx --package create-sadl-project sadl worktree . --task "1.2 Billing webhook" --dir ../billing-webhook
 ```
 
 ## Dream Pass

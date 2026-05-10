@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Updated README and usage docs for the promoted npm dist-tags.
+- Documented PRD intake modes, AI workflow configuration, supported assistants, and current handoff boundaries.
+
 ## 0.2.0-next.0
 
 - Added interactive and JSON-backed `sadl intake` file generation.
