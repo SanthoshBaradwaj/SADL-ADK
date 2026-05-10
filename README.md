@@ -32,36 +32,36 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 
 ```text
 sadl-kit/
-├── bin/                       # CLI entry points
-├── src/                       # CLI implementation
-├── templates/project/         # SADL project skeleton
-├── schemas/                   # JSON schemas
-├── adapters/                  # Tool-specific usage notes
-├── docs/                      # Product docs and BKMs
-├── examples/                  # Real usage examples
-└── tests/                     # CLI tests
++-- bin/                       # CLI entry points
++-- src/                       # CLI implementation
++-- templates/project/         # SADL project skeleton
++-- schemas/                   # JSON schemas
++-- adapters/                  # Tool-specific usage notes
++-- docs/                      # Product docs and BKMs
++-- examples/                  # Real usage examples
++-- tests/                     # CLI tests
 ```
 
 A generated SADL project contains:
 
 ```text
 project-root/
-├── AGENTS.md                  # Primary agent operating rules
-├── .agent_rules.md            # Compatibility alias for agents that expect it
-├── .sadl.config.json          # Host policy, validation, token, model, secret rules
-├── .sadl_manifest.json        # Generated hash manifest
-├── .env.example               # Secret names only, never values
-├── docs/
-│   ├── 01_PRD.md              # Product intent
-│   ├── 02_ROADMAP.md          # Task ledger
-│   ├── 03_STATE.md            # Latest handoff
-│   ├── 04_ARCH_SPEC.md        # Technical boundaries
-│   ├── 05_SESSION_LOG.md      # Human-readable session receipts
-│   ├── setup-env.md           # Environment variable setup by name
-│   ├── decisions/             # Proposed ADRs
-│   └── session_logs/          # Machine-readable JSON receipts
-├── src/
-└── tests/
++-- AGENTS.md                  # Primary agent operating rules
++-- .agent_rules.md            # Compatibility alias for agents that expect it
++-- .sadl.config.json          # Host policy, validation, token, model, secret rules
++-- .sadl_manifest.json        # Generated hash manifest
++-- .env.example               # Secret names only, never values
++-- docs/
+|   +-- 01_PRD.md              # Product intent
+|   +-- 02_ROADMAP.md          # Task ledger
+|   +-- 03_STATE.md            # Latest handoff
+|   +-- 04_ARCH_SPEC.md        # Technical boundaries
+|   +-- 05_SESSION_LOG.md      # Human-readable session receipts
+|   +-- setup-env.md           # Environment variable setup by name
+|   +-- decisions/             # Proposed ADRs
+|   +-- session_logs/          # Machine-readable JSON receipts
++-- src/
++-- tests/
 ```
 
 ## Run Locally
@@ -80,9 +80,9 @@ On Windows PowerShell, if `npm test` is blocked by execution policy, run the tes
 node tests/sadl-cli.test.js
 ```
 
-## Intended Published Usage
+## Published Usage
 
-After publishing to npm:
+SADL is published on npm as `create-sadl-project`:
 
 ```bash
 npx create-sadl-project my-app
@@ -419,4 +419,3 @@ Use the smallest profile that fits:
 - `lite`: solo or small project. Core docs and config.
 - `standard`: production app. Adds architecture, validation, logs, secret safety.
 - `enterprise`: teams, monorepos, regulated work. Adds stricter logs, manifests, multi-agent ownership, policy gates.
-
