@@ -1,6 +1,6 @@
 {
   "name": "create-sadl-project",
-  "version": "0.1.1",
+  "version": "0.2.0-next.0",
   "description": "Stateless AI Development Lifecycle kit: repo-native templates, validation, checkpoints, and handoff logs for AI coding sessions.",
   "type": "commonjs",
   "bin": {

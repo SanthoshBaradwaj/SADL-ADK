@@ -1,0 +1,29 @@
+{
+  "name": "monorepo",
+  "description": "Defaults for repositories with multiple packages, apps, or services.",
+  "config": {
+    "profile": "enterprise",
+    "approvalPolicy": {
+      "requireHumanFor": [
+        "architecture_change",
+        "production_deploy",
+        "secret_access",
+        "merge_conflict",
+        "protected_file_change",
+        "cross_package_change"
+      ]
+    },
+    "toolBudgets": {
+      "maxSearchCommandsPerAudit": 12,
+      "maxRepeatedCommand": 2,
+      "maxFailedTestRetries": 3,
+      "maxNoProgressMinutes": 12,
+      "approvalWaitMode": "pause"
+    },
+    "commitPolicy": {
+      "requireCommitWhenValidationPasses": true,
+      "allowCheckpointWithoutCommit": true,
+      "defaultBranchPrefix": "sadl/task-"
+    }
+  }
+}

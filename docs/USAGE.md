@@ -3,7 +3,7 @@
 ## New Project
 
 ```bash
-sadl init my-app
+npx create-sadl-project@latest my-app
 cd my-app
 ```
 
@@ -19,21 +19,29 @@ docs/04_ARCH_SPEC.md
 Validate:
 
 ```bash
-sadl validate . --strict
+npx --package create-sadl-project@latest sadl validate . --strict
 ```
 
 Start the first agent session:
 
 ```bash
-sadl start .
+npx --package create-sadl-project@latest sadl start .
+```
+
+For guided setup:
+
+```bash
+npx --package create-sadl-project@next sadl intake . --write
+npx --package create-sadl-project@next sadl plan . --write
+npx --package create-sadl-project@next sadl policy . --apply solo
 ```
 
 ## Existing Project
 
 ```bash
 cd existing-repo
-sadl adopt .
-sadl validate .
+npx --package create-sadl-project@latest sadl adopt .
+npx --package create-sadl-project@latest sadl validate .
 ```
 
 Then fill the missing PRD and architecture sections. Do not start code work until `sadl validate --strict` passes or every failure is intentionally accepted by a human.
@@ -73,6 +81,31 @@ sadl commit . --message "sadl: complete login form"
 
 The commit command refuses to commit if SADL validation has hard failures.
 
+## Validation Runner
+
+Run configured commands from `.sadl.config.json`:
+
+```bash
+npx --package create-sadl-project@next sadl run . --category test
+npx --package create-sadl-project@next sadl validate . --run
+```
+
+## CI, Dashboard, And Adapters
+
+```bash
+npx --package create-sadl-project@next sadl ci .
+npx --package create-sadl-project@next sadl dashboard .
+npx --package create-sadl-project@next sadl adapter . --tool cursor
+npx --package create-sadl-project@next sadl adapter . --tool claude-code
+```
+
+## Multi-Agent Helpers
+
+```bash
+npx --package create-sadl-project@next sadl branch . --task "1.1 Auth UI"
+npx --package create-sadl-project@next sadl worktree . --task "1.2 Billing webhook" --dir ../billing-webhook
+```
+
 ## Dream Pass
 
 ```bash
@@ -80,4 +113,3 @@ sadl dream .
 ```
 
 This writes a report under `docs/dreams/`. It is review-only. It may suggest rule, architecture, or tooling improvements, but agents must not auto-apply those changes.
-

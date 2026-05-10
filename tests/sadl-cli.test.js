@@ -30,6 +30,7 @@ function assertOk(result, label) {
 try {
   const project = path.join(tempRoot, "my-app");
   const createdProject = path.join(tempRoot, "created-app");
+  const interactiveProject = path.join(tempRoot, "interactive-app");
 
   let result = run(["init", project]);
   assertOk(result, "init");
@@ -44,13 +45,105 @@ try {
   assertOk(result, "create-sadl-project");
   assert(fs.existsSync(path.join(createdProject, "AGENTS.md")), "create wrapper should init project");
 
+  result = run(["init", interactiveProject]);
+  assertOk(result, "interactive init");
+  const answers = [
+    "Build a tiny notes prototype for solo builders.",
+    "Solo builder, AI coding assistant",
+    "Create notes, List notes",
+    "Payments, Mobile app",
+    "Create a note, View notes",
+    "User can create a note, User can list notes",
+    "Note has id, title, body, and created timestamp.",
+    "JavaScript",
+    "None",
+    "npm",
+    "JSON file",
+    "local",
+    "None",
+    "AUTH_SECRET",
+    "",
+    "node -e \"process.exit(0)\"",
+    "",
+    "",
+    "medium",
+    "production_deploy"
+  ].join("\n");
+  result = run(["intake", interactiveProject, "--write"], { input: answers });
+  assertOk(result, "interactive intake");
+  assert.match(
+    fs.readFileSync(path.join(interactiveProject, "docs", "01_PRD.md"), "utf8"),
+    /tiny notes prototype/,
+    "interactive intake should write PRD"
+  );
+
+  const intakePath = path.join(tempRoot, "intake.json");
+  fs.writeFileSync(intakePath, JSON.stringify({
+    productIntent: "Build a small prototype task tracker for solo builders who want AI-assisted handoffs.",
+    targetUsers: ["Solo builder", "AI coding assistant"],
+    mvpScope: ["Create tasks", "Mark tasks done", "Show active task"],
+    nonGoals: ["Payments", "Native mobile app"],
+    coreWorkflows: ["Create a task", "Complete a task"],
+    acceptanceCriteria: ["User can create a task", "User can mark a task done"],
+    dataModel: "Task has id, title, status, and created timestamp.",
+    technicalPreferences: {
+      language: "JavaScript",
+      framework: "None",
+      packageManager: "npm",
+      database: "JSON file",
+      deployment: "local"
+    },
+    integrations: ["None"],
+    secretNames: ["AUTH_SECRET"],
+    validationCommands: {
+      lint: [],
+      test: ["node -e \"process.exit(0)\""],
+      typecheck: [],
+      build: []
+    },
+    agentPolicy: {
+      autonomy: "medium",
+      approvals: ["production_deploy"]
+    }
+  }, null, 2), "utf8");
+
+  result = run(["intake", project, "--from-json", intakePath]);
+  assertOk(result, "intake from json");
+  const prd = fs.readFileSync(path.join(project, "docs", "01_PRD.md"), "utf8");
+  assert.match(prd, /task tracker/, "intake should write PRD content");
+
+  result = run(["plan", project, "--write"]);
+  assertOk(result, "plan write");
+  const roadmap = fs.readFileSync(path.join(project, "docs", "02_ROADMAP.md"), "utf8");
+  assert.match(roadmap, /NEEDS_REVIEW/, "plan should add approval gate");
+
+  result = run(["run", project, "--category", "test"]);
+  assertOk(result, "validation runner");
+
+  result = run(["ci", project]);
+  assertOk(result, "ci template");
+  assert(fs.existsSync(path.join(project, ".github", "workflows", "sadl-validate.yml")), "CI workflow should exist");
+
+  result = run(["adapter", project, "--tool", "claude-code"]);
+  assertOk(result, "adapter generation");
+  assert(fs.existsSync(path.join(project, "CLAUDE.md")), "CLAUDE.md should exist");
+
+  result = run(["adapter", project, "--tool", "codex"]);
+  assertOk(result, "codex adapter generation");
+  assert(fs.existsSync(path.join(project, "docs", "adapters", "codex.md")), "codex adapter notes should exist");
+
+  result = run(["policy", project, "--apply", "startup-saas"]);
+  assertOk(result, "policy apply");
+  const config = JSON.parse(fs.readFileSync(path.join(project, ".sadl.config.json"), "utf8"));
+  assert.strictEqual(config.policyPack, "startup-saas", "policy pack should be recorded");
+
   result = run(["validate", project]);
   assertOk(result, "validate");
   assert.match(result.stdout, /SADL validation/, "validate should print validation summary");
 
   result = run(["validate", project, "--strict"]);
   assert.notStrictEqual(result.status, 0, "strict validation should fail while placeholders remain");
-  assert.match(result.stdout, /USER ACTION REQUIRED/, "strict validation should mention placeholders");
+  assert.match(result.stdout, /No completed SADL checkpoint/, "strict validation should require a checkpoint");
 
   result = run([
     "checkpoint",
@@ -78,6 +171,10 @@ try {
   result = run(["dream", project]);
   assertOk(result, "dream");
   assert(fs.existsSync(path.join(project, "docs", "dreams")), "dreams directory should exist");
+
+  result = run(["dashboard", project]);
+  assertOk(result, "dashboard");
+  assert(fs.existsSync(path.join(project, "docs", "sadl-dashboard.html")), "dashboard should exist");
 
   result = run(["status", project, "--json"]);
   assertOk(result, "status json");

@@ -1,0 +1,35 @@
+{
+  "name": "enterprise",
+  "description": "Stricter defaults for team, regulated, or audit-heavy projects.",
+  "config": {
+    "profile": "enterprise",
+    "approvalPolicy": {
+      "requireHumanFor": [
+        "architecture_change",
+        "production_deploy",
+        "secret_access",
+        "merge_conflict",
+        "protected_file_change",
+        "schema_migration",
+        "security_sensitive_change",
+        "dependency_license_change"
+      ]
+    },
+    "toolBudgets": {
+      "maxSearchCommandsPerAudit": 8,
+      "maxRepeatedCommand": 2,
+      "maxFailedTestRetries": 2,
+      "maxNoProgressMinutes": 8,
+      "approvalWaitMode": "pause"
+    },
+    "commitPolicy": {
+      "requireCommitWhenValidationPasses": true,
+      "allowCheckpointWithoutCommit": false,
+      "defaultBranchPrefix": "sadl/task-"
+    },
+    "secretPolicy": {
+      "allowAgentsToReadEnvValues": false,
+      "redactSessionLogs": true
+    }
+  }
+}

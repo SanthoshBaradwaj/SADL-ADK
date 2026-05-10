@@ -1,0 +1,20 @@
+{
+  "name": "open-source",
+  "description": "Defaults for public repositories where contributor clarity matters.",
+  "config": {
+    "profile": "standard",
+    "approvalPolicy": {
+      "requireHumanFor": [
+        "architecture_change",
+        "protected_file_change",
+        "dependency_license_change",
+        "public_api_change"
+      ]
+    },
+    "commitPolicy": {
+      "requireCommitWhenValidationPasses": true,
+      "allowCheckpointWithoutCommit": true,
+      "defaultBranchPrefix": "sadl/task-"
+    }
+  }
+}

@@ -4,10 +4,15 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { spawnSync } = require("child_process");
+const readline = require("readline/promises");
+const { stdin: input, stdout: output } = require("process");
+const { validateSchema } = require("./schema-validator");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const TEMPLATE_DIR = path.join(ROOT_DIR, "templates", "project");
-const SADL_VERSION = "0.1.0";
+const SCHEMA_DIR = path.join(ROOT_DIR, "schemas");
+const POLICY_DIR = path.join(ROOT_DIR, "policy-packs");
+const SADL_VERSION = require("../package.json").version;
 
 const REQUIRED_FILES = [
   "AGENTS.md",
@@ -57,6 +62,11 @@ function main(argv) {
     case "-h":
       printHelp();
       return Promise.resolve();
+    case "version":
+    case "--version":
+    case "-v":
+      console.log(SADL_VERSION);
+      return Promise.resolve();
     case "init":
     case "new":
       return Promise.resolve(commandInit(args, options, { adopt: false }));
@@ -67,6 +77,8 @@ function main(argv) {
     case "validate":
     case "doctor":
       return Promise.resolve(commandValidate(args, options));
+    case "run":
+      return Promise.resolve(commandRun(args, options));
     case "checkpoint":
       return Promise.resolve(commandCheckpoint(args, options));
     case "manifest":
@@ -78,7 +90,21 @@ function main(argv) {
     case "start":
       return Promise.resolve(commandStart(args, options));
     case "intake":
-      return Promise.resolve(commandIntake(args, options));
+      return commandIntake(args, options);
+    case "plan":
+      return Promise.resolve(commandPlan(args, options));
+    case "branch":
+      return Promise.resolve(commandBranch(args, options));
+    case "worktree":
+      return Promise.resolve(commandWorktree(args, options));
+    case "ci":
+      return Promise.resolve(commandCi(args, options));
+    case "dashboard":
+      return Promise.resolve(commandDashboard(args, options));
+    case "policy":
+      return Promise.resolve(commandPolicy(args, options));
+    case "adapter":
+      return Promise.resolve(commandAdapter(args, options));
     default:
       if (!command) {
         printHelp();
@@ -121,18 +147,28 @@ function printHelp() {
 Usage:
   sadl init [path] [--profile lite|standard|enterprise] [--force]
   sadl adopt [path] [--profile lite|standard|enterprise]
-  sadl intake
+  sadl intake [path] [--write] [--from-json intake.json]
+  sadl plan [path] [--write]
   sadl start [path]
   sadl status [path]
-  sadl validate [path] [--strict] [--json]
+  sadl validate [path] [--strict] [--json] [--run]
+  sadl run [path] [--category lint|test|typecheck|build]
   sadl manifest [path]
   sadl checkpoint [path] --task "Task 1.1" --status WIP|DONE|BLOCKED
   sadl dream [path]
+  sadl dashboard [path]
+  sadl branch [path] --task "Task 1.1"
+  sadl worktree [path] --task "Task 1.1" --dir "../task-1-1"
+  sadl ci [path]
+  sadl policy [path] --list | --apply solo|startup-saas|enterprise|open-source|monorepo
+  sadl adapter [path] --tool codex|claude-code|cursor|gemini|github-copilot|generic-cli
   sadl commit [path] --message "sadl: complete task"
 
 Examples:
   sadl init my-app
   sadl validate my-app --strict
+  sadl intake my-app --write
+  sadl run my-app --category test
   sadl checkpoint . --task "1.1 Bootstrap app" --status DONE --next "Start task 1.2"
 `);
 }
@@ -168,10 +204,26 @@ function commandInit(args, options, meta) {
   console.log("Next: fill docs/01_PRD.md, then run: sadl validate .");
 }
 
-function commandIntake() {
+async function commandIntake(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  if (options.fromJson) {
+    const intake = readJson(path.resolve(options.fromJson));
+    if (!intake) throw new Error(`could not read intake JSON at ${options.fromJson}`);
+    writeIntakeFiles(projectDir, intake);
+    console.log(`SADL intake files written to ${projectDir}`);
+    return;
+  }
+
+  if (options.write || options.interactive) {
+    const intake = options.interactive ? await promptForIntake() : await readOrPromptForIntake();
+    writeIntakeFiles(projectDir, intake);
+    console.log(`SADL intake files written to ${projectDir}`);
+    return;
+  }
+
   console.log(`SADL Intake Questions
 
-Copy these answers into docs/01_PRD.md and docs/04_ARCH_SPEC.md.
+Run "sadl intake . --write" for an interactive wizard, or "sadl intake . --from-json intake.json" for automation.
 
 1. Product intent: What are we building, for whom, and why?
 2. MVP scope: What must be true for the first useful release?
@@ -211,6 +263,138 @@ function commandStart(args) {
   console.log("4. Execute the scoped task, validate, checkpoint, then commit if valid.");
 }
 
+function commandPlan(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  ensureProject(projectDir);
+  const prd = readTextIfExists(path.join(projectDir, "docs/01_PRD.md"));
+  const tasks = buildRoadmapTasksFromPrd(prd);
+  const roadmap = `# 02_ROADMAP.md: SADL Roadmap Ledger
+
+## Task State Legend
+- \`[TODO]\` Ready to start.
+- \`[WIP]\` In active implementation.
+- \`[DONE]\` Completed and validated.
+- \`[BLOCKED]\` Cannot proceed without external action.
+- \`[FAILED_TESTS]\` Implementation exists but validation failed.
+- \`[NEEDS_REVIEW]\` Human review required.
+- \`[WAITING_FOR_APPROVAL]\` Agent must stop until human approval.
+- \`[SPLIT_REQUIRED]\` Task is too large and must be atomized.
+- \`[ABANDONED]\` No longer planned.
+
+## Current Roadmap
+${tasks.map((task, index) => `- [TODO] ${index + 1}. ${task}`).join("\n")}
+
+## Approval Gate
+- [NEEDS_REVIEW] Human must approve this generated roadmap before implementation begins.
+
+## Planning Rules
+- Keep tasks small enough to complete, validate, checkpoint, and commit in one session.
+- Each task must have acceptance criteria.
+- Parallel agents may not edit the same source file unless explicitly serialized by the coordinator.
+`;
+
+  if (options.write) {
+    writeFile(path.join(projectDir, "docs/02_ROADMAP.md"), roadmap);
+    commandManifest([projectDir], { quiet: true });
+    console.log(`Roadmap written with ${tasks.length} generated tasks.`);
+  } else {
+    console.log(roadmap);
+  }
+}
+
+function commandBranch(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const config = readConfig(projectDir, []);
+  const task = String(options.task || readActiveTask(projectDir) || "sadl-task");
+  const branch = options.name || buildBranchName(config, task);
+  const git = getGitStatus(projectDir);
+  if (!git.available) throw new Error("cannot create a task branch because this is not a Git repository.");
+  runGit(projectDir, ["checkout", "-b", branch]);
+  console.log(`Created and checked out branch ${branch}`);
+}
+
+function commandWorktree(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const config = readConfig(projectDir, []);
+  const task = String(options.task || readActiveTask(projectDir) || "sadl-task");
+  const branch = options.name || buildBranchName(config, task);
+  const dir = options.dir ? path.resolve(projectDir, options.dir) : path.resolve(projectDir, "..", branch.replace(/[\\/]/g, "-"));
+  const git = getGitStatus(projectDir);
+  if (!git.available) throw new Error("cannot create a worktree because this is not a Git repository.");
+  runGit(projectDir, ["worktree", "add", "-b", branch, dir]);
+  console.log(`Created worktree ${dir} on branch ${branch}`);
+}
+
+function commandCi(args) {
+  const projectDir = path.resolve(args[0] || ".");
+  const workflow = `name: SADL Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  sadl-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npx --package create-sadl-project@latest sadl validate . --strict
+`;
+  writeFile(path.join(projectDir, ".github/workflows/sadl-validate.yml"), workflow);
+  console.log("GitHub Action written to .github/workflows/sadl-validate.yml");
+}
+
+function commandDashboard(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const data = buildDashboardData(projectDir);
+  if (options.json) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+  const html = renderDashboardHtml(data);
+  const outPath = path.join(projectDir, "docs/sadl-dashboard.html");
+  writeFile(outPath, html);
+  console.log(`Dashboard written: ${outPath}`);
+}
+
+function commandPolicy(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const policies = listPolicies();
+  if (options.list || !options.apply) {
+    console.log("Available policy packs:");
+    for (const policy of policies) console.log(`- ${policy}`);
+    return;
+  }
+
+  const policyName = String(options.apply);
+  if (!policies.includes(policyName)) {
+    throw new Error(`unknown policy pack "${policyName}". Use sadl policy --list.`);
+  }
+
+  const policy = readJson(path.join(POLICY_DIR, `${policyName}.json`));
+  const configPath = path.join(projectDir, ".sadl.config.json");
+  const config = readJson(configPath);
+  if (!config) throw new Error("missing or invalid .sadl.config.json");
+  const merged = mergePolicy(config, policy);
+  writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`);
+  commandManifest([projectDir], { quiet: true });
+  console.log(`Applied policy pack ${policyName}`);
+}
+
+function commandAdapter(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const tool = String(options.tool || "").toLowerCase();
+  if (!tool) throw new Error("missing --tool. Use codex, claude-code, cursor, gemini, github-copilot, or generic-cli.");
+  const adapter = buildAdapterFile(tool);
+  writeFile(path.join(projectDir, adapter.path), adapter.content);
+  console.log(`Adapter written: ${adapter.path}`);
+}
+
 function commandStatus(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   const status = {
@@ -235,7 +419,11 @@ function commandStatus(args, options) {
 
 function commandValidate(args, options) {
   const projectDir = path.resolve(args[0] || ".");
-  const result = collectValidation(projectDir, { strict: Boolean(options.strict) });
+  const result = collectValidation(projectDir, {
+    strict: Boolean(options.strict),
+    run: Boolean(options.run),
+    category: options.category
+  });
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
@@ -244,6 +432,30 @@ function commandValidate(args, options) {
   }
 
   if (result.failures.length > 0) {
+    process.exitCode = 1;
+  }
+}
+
+function commandRun(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const failures = [];
+  const config = readConfig(projectDir, failures);
+  if (!config) {
+    throw new Error(failures[0] || "missing .sadl.config.json");
+  }
+
+  const result = executeValidationCommands(projectDir, config, {
+    category: options.category
+  });
+
+  for (const item of result.results) {
+    console.log(`\n[${item.category}] ${item.command}`);
+    if (item.stdout) console.log(item.stdout.trim());
+    if (item.stderr) console.error(item.stderr.trim());
+    console.log(`exit=${item.status}${item.timedOut ? " timed-out" : ""}`);
+  }
+
+  if (!result.ok) {
     process.exitCode = 1;
   }
 }
@@ -271,6 +483,14 @@ function collectValidation(projectDir, options) {
 
   const config = readConfig(projectDir, failures);
   checks.configValid = Boolean(config);
+  if (config) {
+    const configSchema = readJson(path.join(SCHEMA_DIR, "sadl-config.schema.json"));
+    const schemaResult = validateSchema(configSchema, config);
+    checks.configSchemaValid = schemaResult.ok;
+    for (const error of schemaResult.errors) {
+      failures.push(`.sadl.config.json schema: ${error}`);
+    }
+  }
 
   checks.gitignoreSecrets = checkGitignore(projectDir, warnings, failures);
   checks.noTrackedSecrets = checkTrackedSecrets(projectDir, failures, warnings);
@@ -278,6 +498,7 @@ function collectValidation(projectDir, options) {
   checks.statePresent = checkState(projectDir, options, warnings, failures);
   checks.roadmapPresent = checkRoadmap(projectDir, warnings);
   checks.manifestFresh = checkManifest(projectDir, warnings);
+  checks.sessionLogsValid = checkSessionLogs(projectDir, warnings, failures);
 
   const git = getGitStatus(projectDir);
   checks.protectedClean = true;
@@ -294,6 +515,19 @@ function collectValidation(projectDir, options) {
     const prd = readTextIfExists(path.join(projectDir, "docs/01_PRD.md"));
     if (prd && prd.includes("[USER ACTION REQUIRED]")) {
       failures.push("PRD still contains [USER ACTION REQUIRED] placeholders.");
+    }
+  }
+
+  if (options.run && config) {
+    const runResult = executeValidationCommands(projectDir, config, {
+      category: options.category,
+      quiet: true
+    });
+    checks.validationCommandsPassed = runResult.ok;
+    for (const result of runResult.results) {
+      if (result.status !== 0) {
+        failures.push(`Validation command failed (${result.category}): ${result.command}`);
+      }
     }
   }
 
@@ -420,6 +654,9 @@ function commandDream(args, options) {
   const repeatedCommands = countValues(logs.flatMap((log) => log.commandsRun || []));
   const repeatedBlockers = countValues(logs.map((log) => log.blocker).filter(Boolean));
   const failedTasks = logs.filter((log) => !["DONE", "DONE_COMMITTED"].includes(log.status));
+  const statusCounts = countValues(logs.map((log) => log.status).filter(Boolean));
+  const approvalCount = logs.reduce((sum, log) => sum + Number(log.approvalsRequested || 0), 0);
+  const waitingMinutes = logs.reduce((sum, log) => sum + Number(log.waitingMinutes || 0), 0);
   const timestamp = new Date().toISOString();
 
   const report = `# SADL Dream Report
@@ -432,6 +669,11 @@ This report is review-only. It may suggest improvements, but agents must not aut
 ## Session Summary
 - Sessions analyzed: ${logs.length}
 - Non-DONE sessions: ${failedTasks.length}
+- Approval requests: ${approvalCount}
+- Waiting minutes: ${waitingMinutes}
+
+## Status Distribution
+${formatCountMap(statusCounts, { includeSingles: true })}
 
 ## Repeated Commands
 ${formatCountMap(repeatedCommands)}
@@ -440,7 +682,7 @@ ${formatCountMap(repeatedCommands)}
 ${formatCountMap(repeatedBlockers)}
 
 ## Proposed Improvements
-${buildDreamSuggestions(repeatedCommands, repeatedBlockers, failedTasks)}
+${buildDreamSuggestions(repeatedCommands, repeatedBlockers, failedTasks, { approvalCount, waitingMinutes, statusCounts })}
 `;
 
   const outPath = path.join(projectDir, "docs/dreams", `${timestamp.replace(/[:.]/g, "-")}.md`);
@@ -476,6 +718,451 @@ function readConfig(projectDir, failures) {
     failures.push(`Invalid .sadl.config.json: ${error.message}`);
     return null;
   }
+}
+
+async function promptForIntake() {
+  const rl = readline.createInterface({ input, output });
+  try {
+    const ask = async (question) => (await rl.question(`${question}\n> `)).trim();
+    const askList = async (question) => splitLines(await ask(`${question} (comma or semicolon separated)`));
+
+    return {
+      productIntent: await ask("What are we building, for whom, and why?"),
+      targetUsers: await askList("Who are the target users or roles?"),
+      mvpScope: await askList("What is in the MVP?"),
+      nonGoals: await askList("What is explicitly out of scope?"),
+      coreWorkflows: await askList("What are the core workflows?"),
+      acceptanceCriteria: await askList("What observable outcomes define done?"),
+      dataModel: await ask("What entities, relationships, privacy, or retention rules matter?"),
+      technicalPreferences: {
+        language: await ask("Preferred language/runtime?"),
+        framework: await ask("Preferred framework?"),
+        packageManager: await ask("Preferred package manager?"),
+        database: await ask("Preferred database/storage?"),
+        deployment: await ask("Deployment target?")
+      },
+      integrations: await askList("External integrations?"),
+      secretNames: normalizeSecretNames(await askList("Required environment variable names only?")),
+      validationCommands: {
+        lint: splitLines(await ask("Lint commands?")),
+        test: splitLines(await ask("Test commands?")),
+        typecheck: splitLines(await ask("Typecheck commands?")),
+        build: splitLines(await ask("Build commands?"))
+      },
+      agentPolicy: {
+        autonomy: await ask("Agent autonomy level? low, medium, high?"),
+        approvals: await askList("What requires human approval?")
+      }
+    };
+  } finally {
+    rl.close();
+  }
+}
+
+async function readOrPromptForIntake() {
+  if (!process.stdin.isTTY) {
+    const stdinText = fs.readFileSync(0, "utf8");
+    if (stdinText.trim()) {
+      return intakeFromAnswerLines(stdinText.split(/\r?\n/));
+    }
+  }
+  return promptForIntake();
+}
+
+function intakeFromAnswerLines(lines) {
+  const answers = [...lines];
+  const next = () => String(answers.shift() || "").trim();
+  return {
+    productIntent: next(),
+    targetUsers: splitLines(next()),
+    mvpScope: splitLines(next()),
+    nonGoals: splitLines(next()),
+    coreWorkflows: splitLines(next()),
+    acceptanceCriteria: splitLines(next()),
+    dataModel: next(),
+    technicalPreferences: {
+      language: next(),
+      framework: next(),
+      packageManager: next(),
+      database: next(),
+      deployment: next()
+    },
+    integrations: splitLines(next()),
+    secretNames: normalizeSecretNames(splitLines(next())),
+    validationCommands: {
+      lint: splitLines(next()),
+      test: splitLines(next()),
+      typecheck: splitLines(next()),
+      build: splitLines(next())
+    },
+    agentPolicy: {
+      autonomy: next(),
+      approvals: splitLines(next())
+    }
+  };
+}
+
+function writeIntakeFiles(projectDir, intake) {
+  ensureDir(projectDir);
+  ensureDir(path.join(projectDir, "docs"));
+  intake.secretNames = normalizeSecretNames(intake.secretNames || []);
+  const schema = readJson(path.join(SCHEMA_DIR, "intake.schema.json"));
+  const result = validateSchema(schema, intake);
+  if (!result.ok) {
+    throw new Error(`intake schema failed:\n${result.errors.join("\n")}`);
+  }
+
+  writeFile(path.join(projectDir, "docs/01_PRD.md"), renderPrd(intake));
+  writeFile(path.join(projectDir, "docs/04_ARCH_SPEC.md"), renderArchSpec(intake));
+  writeFile(path.join(projectDir, ".env.example"), renderEnvExample(intake.secretNames || []));
+  writeFile(path.join(projectDir, "docs/setup-env.md"), renderSetupEnv(intake.secretNames || []));
+  updateConfigFromIntake(projectDir, intake);
+  commandManifest([projectDir], { quiet: true });
+}
+
+function renderPrd(intake) {
+  return `# 01_PRD.md: Product Requirements
+
+## Status
+Approved for planning when reviewed by a human.
+
+## 1. Product Intent
+${intake.productIntent}
+
+## 2. Target Users And Roles
+${formatList(intake.targetUsers)}
+
+## 3. MVP Scope
+${formatList(intake.mvpScope)}
+
+## 4. Non-Goals
+${formatList(intake.nonGoals)}
+
+## 5. Core Workflows
+${formatList(intake.coreWorkflows || [])}
+
+## 6. Acceptance Criteria
+${formatList(intake.acceptanceCriteria)}
+
+## 7. Data And Privacy Requirements
+${intake.dataModel || "No special data requirements recorded."}
+
+## 8. External Integrations
+${formatList(intake.integrations || [])}
+
+## 9. Operational Requirements
+- Validation commands are defined in \`.sadl.config.json\`.
+- Secrets are documented by name only in \`.env.example\` and \`docs/setup-env.md\`.
+
+## 10. Open Questions
+- None recorded.
+`;
+}
+
+function renderArchSpec(intake) {
+  const tech = intake.technicalPreferences || {};
+  return `# 04_ARCH_SPEC.md: Architecture Specification
+
+## Status
+Approved for implementation when reviewed by a human.
+
+## 1. Technical Stack
+- Language/runtime: ${tech.language || "unspecified"}
+- Framework: ${tech.framework || "unspecified"}
+- Package manager: ${tech.packageManager || "unspecified"}
+- Database/storage: ${tech.database || "unspecified"}
+- Deployment target: ${tech.deployment || "unspecified"}
+- Test framework: ${tech.testFramework || "unspecified"}
+
+## 2. Architecture Boundaries
+- UI/presentation: keep user interaction code separate from domain logic.
+- Domain/business logic: keep business rules framework-light and testable.
+- Data access: isolate persistence details behind service/repository modules.
+- External services: isolate third-party APIs behind adapters.
+- Tests: mirror changed source behavior with focused tests.
+
+## 3. Coding Standards
+- Typing rules: prefer explicit types and avoid weak catch-all types.
+- Formatting/linting: use configured project tooling.
+- Error handling: return actionable errors and avoid swallowing failures.
+- Logging: avoid secrets and personal data.
+- Accessibility: keep user-facing UI keyboard and screen-reader friendly.
+
+## 4. Data Model
+${intake.dataModel || "No data model recorded."}
+
+## 5. Security Rules
+- Authentication: document chosen auth approach before implementation.
+- Authorization: enforce role checks server-side.
+- Secret handling: agents may know secret names, never values.
+- Input validation: validate external inputs at boundaries.
+- Audit logging: record important state changes when required by the PRD.
+
+## 6. Validation Commands
+\`\`\`text
+lint: ${(intake.validationCommands?.lint || []).join(", ")}
+test: ${(intake.validationCommands?.test || []).join(", ")}
+typecheck: ${(intake.validationCommands?.typecheck || []).join(", ")}
+build: ${(intake.validationCommands?.build || []).join(", ")}
+\`\`\`
+
+## 7. Integration Contracts
+${formatList(intake.integrations || [])}
+
+## 8. Architecture Decision Records
+Architecture changes must be proposed as \`docs/decisions/ADR-XXXX-title.md\` and approved by a human before implementation.
+`;
+}
+
+function renderEnvExample(secretNames) {
+  const lines = normalizeSecretNames(secretNames).map((name) => `${name}=`);
+  return `# Copy to a local .env file and fill values outside Git.
+# Agents may read this file for variable names only.
+
+${lines.join("\n")}
+`;
+}
+
+function renderSetupEnv(secretNames) {
+  return `# Environment Setup
+
+This file documents required environment variable names only. Do not store secret values here.
+
+## Required Variables
+
+| Name | Purpose | Required For |
+| --- | --- | --- |
+${normalizeSecretNames(secretNames).map((name) => `| \`${name}\` | TODO | Local development |`).join("\n")}
+
+## Agent Rules
+
+Agents may read this file and \`.env.example\` for variable names. Agents must not read \`.env\` files or request secret values in chat.
+`;
+}
+
+function updateConfigFromIntake(projectDir, intake) {
+  const configPath = path.join(projectDir, ".sadl.config.json");
+  const config = readJson(configPath);
+  if (!config) return;
+  config.validation = {
+    ...config.validation,
+    ...intake.validationCommands
+  };
+  if (intake.agentPolicy?.approvals?.length) {
+    config.approvalPolicy = config.approvalPolicy || {};
+    config.approvalPolicy.requireHumanFor = Array.from(new Set([
+      ...(config.approvalPolicy.requireHumanFor || []),
+      ...intake.agentPolicy.approvals
+    ]));
+  }
+  writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+function executeValidationCommands(projectDir, config, options = {}) {
+  const validation = config.validation || {};
+  const categories = options.category ? [String(options.category)] : ["lint", "typecheck", "test", "build"];
+  const timeout = Number(config.validationTimeoutMs || 120000);
+  const results = [];
+
+  for (const category of categories) {
+    const commands = validation[category] || [];
+    for (const command of commands) {
+      if (!command) continue;
+      const result = spawnSync(command, {
+        cwd: projectDir,
+        shell: true,
+        encoding: "utf8",
+        timeout
+      });
+      results.push({
+        category,
+        command,
+        status: result.status === null ? 1 : result.status,
+        timedOut: Boolean(result.error && result.error.code === "ETIMEDOUT"),
+        stdout: result.stdout || "",
+        stderr: result.stderr || (result.error ? result.error.message : "")
+      });
+    }
+  }
+
+  return {
+    ok: results.every((result) => result.status === 0),
+    results
+  };
+}
+
+function checkSessionLogs(projectDir, warnings, failures) {
+  const schema = readJson(path.join(SCHEMA_DIR, "session-log.schema.json"));
+  const logsDir = path.join(projectDir, "docs/session_logs");
+  if (!fs.existsSync(logsDir)) return true;
+  let ok = true;
+  for (const file of listFiles(logsDir).filter((item) => item.endsWith(".json"))) {
+    const log = readJson(file);
+    if (!log) {
+      warnings.push(`Invalid session log JSON: ${normalizePath(path.relative(projectDir, file))}`);
+      ok = false;
+      continue;
+    }
+    const result = validateSchema(schema, log);
+    if (!result.ok) {
+      ok = false;
+      failures.push(`Session log schema failed for ${normalizePath(path.relative(projectDir, file))}: ${result.errors.join("; ")}`);
+    }
+  }
+  return ok;
+}
+
+function buildRoadmapTasksFromPrd(prd) {
+  const bullets = prd
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[-*]\s+/.test(line))
+    .map((line) => line.replace(/^[-*]\s+/, "").trim())
+    .filter((line) => line && !line.includes("[USER ACTION REQUIRED]"))
+    .slice(0, 12);
+  if (bullets.length > 0) return bullets.map((item) => `Implement: ${item}`);
+  return [
+    "Complete project bootstrap and validation setup",
+    "Implement the first MVP workflow",
+    "Add tests for the first MVP workflow",
+    "Checkpoint and prepare the next roadmap slice"
+  ];
+}
+
+function buildBranchName(config, task) {
+  const prefix = config?.commitPolicy?.defaultBranchPrefix || "sadl/task-";
+  return `${prefix}${slugify(task).slice(0, 60)}`;
+}
+
+function buildDashboardData(projectDir) {
+  const logsDir = path.join(projectDir, "docs/session_logs");
+  const logs = fs.existsSync(logsDir)
+    ? listFiles(logsDir).filter((file) => file.endsWith(".json")).map((file) => readJson(file)).filter(Boolean)
+    : [];
+  const statusCounts = Object.fromEntries(countValues(logs.map((log) => log.status)));
+  const blockerCounts = countValues(logs.map((log) => log.blocker).filter(Boolean)).slice(0, 10);
+  const commandCounts = countValues(logs.flatMap((log) => log.commandsRun || [])).slice(0, 10);
+  return {
+    generatedAt: new Date().toISOString(),
+    project: projectDir,
+    activeTask: readActiveTask(projectDir),
+    state: readStateSummary(projectDir),
+    git: getGitStatus(projectDir),
+    sessions: logs.length,
+    statusCounts,
+    waitingMinutes: logs.reduce((sum, log) => sum + Number(log.waitingMinutes || 0), 0),
+    approvalsRequested: logs.reduce((sum, log) => sum + Number(log.approvalsRequested || 0), 0),
+    topBlockers: blockerCounts,
+    repeatedCommands: commandCounts
+  };
+}
+
+function renderDashboardHtml(data) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SADL Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 32px; color: #1f2937; }
+    main { max-width: 960px; margin: 0 auto; }
+    h1, h2 { margin-bottom: 8px; }
+    section { border-top: 1px solid #d1d5db; padding: 20px 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .metric { border: 1px solid #d1d5db; padding: 12px; border-radius: 6px; }
+    .metric strong { display: block; font-size: 24px; }
+    code { background: #f3f4f6; padding: 2px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>SADL Dashboard</h1>
+  <p>Generated ${escapeHtml(data.generatedAt)}</p>
+  <section>
+    <h2>Current State</h2>
+    <p><strong>Active task:</strong> ${escapeHtml(data.activeTask || "none")}</p>
+    <p><strong>State:</strong> ${escapeHtml(data.state || "none")}</p>
+    <p><strong>Git:</strong> ${data.git.available ? `${data.git.changedFiles.length} changed files` : "not a git repo"}</p>
+  </section>
+  <section class="grid">
+    <div class="metric"><span>Sessions</span><strong>${data.sessions}</strong></div>
+    <div class="metric"><span>Approval Requests</span><strong>${data.approvalsRequested}</strong></div>
+    <div class="metric"><span>Waiting Minutes</span><strong>${data.waitingMinutes}</strong></div>
+  </section>
+  <section>
+    <h2>Status Counts</h2>
+    ${renderKeyValueList(Object.entries(data.statusCounts))}
+  </section>
+  <section>
+    <h2>Top Blockers</h2>
+    ${renderCountList(data.topBlockers)}
+  </section>
+  <section>
+    <h2>Repeated Commands</h2>
+    ${renderCountList(data.repeatedCommands)}
+  </section>
+</main>
+</body>
+</html>
+`;
+}
+
+function listPolicies() {
+  if (!fs.existsSync(POLICY_DIR)) return [];
+  return fs.readdirSync(POLICY_DIR)
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => file.replace(/\.json$/, ""))
+    .sort();
+}
+
+function mergePolicy(config, policy) {
+  const outputConfig = { ...config };
+  for (const [key, value] of Object.entries(policy.config || {})) {
+    if (Array.isArray(value)) {
+      outputConfig[key] = Array.from(new Set([...(outputConfig[key] || []), ...value]));
+    } else if (value && typeof value === "object") {
+      outputConfig[key] = deepMerge(outputConfig[key] || {}, value);
+    } else {
+      outputConfig[key] = value;
+    }
+  }
+  outputConfig.policyPack = policy.name || outputConfig.policyPack;
+  return outputConfig;
+}
+
+function buildAdapterFile(tool) {
+  const common = "This repository uses SADL. Follow AGENTS.md as the source of truth. Read .sadl.config.json, docs/03_STATE.md, and docs/02_ROADMAP.md before editing. Do not read .env files or modify protected files without approval.";
+  const adapters = {
+    "claude-code": {
+      path: "CLAUDE.md",
+      content: `# CLAUDE.md\n\n${common}\n`
+    },
+    cursor: {
+      path: ".cursor/rules/sadl.mdc",
+      content: `---\nalwaysApply: true\n---\n${common}\n`
+    },
+    codex: {
+      path: "docs/adapters/codex.md",
+      content: `# Codex Adapter\n\nCodex can use the repository-level AGENTS.md directly. Keep AGENTS.md as the canonical SADL operating rules.\n\n${common}\n`
+    },
+    gemini: {
+      path: "GEMINI.md",
+      content: `# GEMINI.md\n\n${common}\n`
+    },
+    "github-copilot": {
+      path: ".github/copilot-instructions.md",
+      content: `# GitHub Copilot Instructions\n\n${common}\n`
+    },
+    "generic-cli": {
+      path: "SADL_AGENT_PROMPT.md",
+      content: `# SADL Agent Prompt\n\n${common}\n`
+    }
+  };
+  if (!adapters[tool]) {
+    throw new Error(`unknown adapter "${tool}"`);
+  }
+  return adapters[tool];
 }
 
 function ensureProject(projectDir) {
@@ -768,6 +1455,59 @@ function parseNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function splitLines(value) {
+  if (!value) return [];
+  return String(value)
+    .split(/[;\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeSecretNames(values) {
+  return splitLines(Array.isArray(values) ? values.join(",") : values)
+    .map((value) => value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))
+    .filter(Boolean);
+}
+
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "task";
+}
+
+function deepMerge(base, override) {
+  const outputValue = { ...base };
+  for (const [key, value] of Object.entries(override || {})) {
+    if (Array.isArray(value)) {
+      outputValue[key] = Array.from(new Set([...(outputValue[key] || []), ...value]));
+    } else if (value && typeof value === "object") {
+      outputValue[key] = deepMerge(outputValue[key] || {}, value);
+    } else {
+      outputValue[key] = value;
+    }
+  }
+  return outputValue;
+}
+
+function renderKeyValueList(entries) {
+  if (!entries || entries.length === 0) return "<p>None.</p>";
+  return `<ul>${entries.map(([key, value]) => `<li><code>${escapeHtml(key)}</code>: ${escapeHtml(String(value))}</li>`).join("")}</ul>`;
+}
+
+function renderCountList(entries) {
+  if (!entries || entries.length === 0) return "<p>None.</p>";
+  return `<ul>${entries.map(([key, value]) => `<li><code>${escapeHtml(key)}</code>: ${escapeHtml(String(value))}</li>`).join("")}</ul>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function countValues(values) {
   const counts = new Map();
   for (const value of values) {
@@ -778,13 +1518,15 @@ function countValues(values) {
   return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
 }
 
-function formatCountMap(entries) {
-  const repeated = entries.filter(([, count]) => count > 1).slice(0, 10);
+function formatCountMap(entries, options = {}) {
+  const repeated = entries
+    .filter(([, count]) => options.includeSingles || count > 1)
+    .slice(0, 10);
   if (repeated.length === 0) return "- No repeated items detected.";
   return repeated.map(([value, count]) => `- ${value}: ${count}`).join("\n");
 }
 
-function buildDreamSuggestions(commandCounts, blockerCounts, failedTasks) {
+function buildDreamSuggestions(commandCounts, blockerCounts, failedTasks, metrics = {}) {
   const suggestions = [];
   if (commandCounts.some(([, count]) => count > 2)) {
     suggestions.push("- Add or tighten a tool budget for repeated commands.");
@@ -794,6 +1536,12 @@ function buildDreamSuggestions(commandCounts, blockerCounts, failedTasks) {
   }
   if (failedTasks.length > 0) {
     suggestions.push("- Review failed tasks and decide whether to split, block, or re-scope them.");
+  }
+  if (metrics.approvalCount > 0 || metrics.waitingMinutes > 0) {
+    suggestions.push("- Review approval gates and document which actions can proceed read-only while waiting.");
+  }
+  if ((metrics.statusCounts || []).some(([status, count]) => status === "FAILED_TESTS" && count > 1)) {
+    suggestions.push("- Add a test-failure BKM or tighten validation commands for recurring failed tests.");
   }
   suggestions.push("- Human review required before changing AGENTS.md, .sadl.config.json, or docs/04_ARCH_SPEC.md.");
   return suggestions.join("\n");

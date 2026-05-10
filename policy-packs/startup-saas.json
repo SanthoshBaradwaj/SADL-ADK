@@ -1,0 +1,30 @@
+{
+  "name": "startup-saas",
+  "description": "Balanced defaults for MVP SaaS apps with auth, billing, integrations, and CI.",
+  "config": {
+    "profile": "standard",
+    "approvalPolicy": {
+      "requireHumanFor": [
+        "architecture_change",
+        "production_deploy",
+        "secret_access",
+        "merge_conflict",
+        "protected_file_change",
+        "billing_change",
+        "auth_policy_change"
+      ]
+    },
+    "toolBudgets": {
+      "maxSearchCommandsPerAudit": 10,
+      "maxRepeatedCommand": 2,
+      "maxFailedTestRetries": 3,
+      "maxNoProgressMinutes": 10,
+      "approvalWaitMode": "pause"
+    },
+    "commitPolicy": {
+      "requireCommitWhenValidationPasses": true,
+      "allowCheckpointWithoutCommit": true,
+      "defaultBranchPrefix": "sadl/task-"
+    }
+  }
+}

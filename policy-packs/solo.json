@@ -1,0 +1,19 @@
+{
+  "name": "solo",
+  "description": "Lightweight defaults for individual builders and quick prototypes.",
+  "config": {
+    "profile": "lite",
+    "toolBudgets": {
+      "maxSearchCommandsPerAudit": 8,
+      "maxRepeatedCommand": 2,
+      "maxFailedTestRetries": 2,
+      "maxNoProgressMinutes": 8,
+      "approvalWaitMode": "pause"
+    },
+    "commitPolicy": {
+      "requireCommitWhenValidationPasses": true,
+      "allowCheckpointWithoutCommit": true,
+      "defaultBranchPrefix": "sadl/task-"
+    }
+  }
+}

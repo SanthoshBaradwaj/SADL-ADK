@@ -84,19 +84,42 @@ node tests/sadl-cli.test.js
 
 SADL is published on npm as `create-sadl-project`:
 
+Zero-install usage:
+
 ```bash
-npx create-sadl-project my-app
+npx create-sadl-project@latest my-app
+cd my-app
+npx --package create-sadl-project@latest sadl validate .
+npx --package create-sadl-project@latest sadl start .
+```
+
+Optional global install:
+
+```bash
+npm install -g create-sadl-project@latest
+create-sadl-project my-app
 cd my-app
 sadl validate .
 sadl start .
+```
+
+This repository currently tracks the next development release. The advanced prototype commands below require `0.2.0-next.0` or later. After publishing it with the `next` tag, test it with:
+
+```bash
+npx create-sadl-project@next prototype-app
+cd prototype-app
+npx --package create-sadl-project@next sadl intake . --write
+npx --package create-sadl-project@next sadl plan . --write
+npx --package create-sadl-project@next sadl policy . --apply solo
+npx --package create-sadl-project@next sadl validate .
 ```
 
 For an existing repository:
 
 ```bash
 cd existing-project
-sadl adopt .
-sadl validate .
+npx --package create-sadl-project@latest sadl adopt .
+npx --package create-sadl-project@latest sadl validate .
 ```
 
 ## Core Commands
@@ -104,13 +127,21 @@ sadl validate .
 ```bash
 sadl init [path]          # Create SADL files in a new project
 sadl adopt [path]         # Add SADL files to an existing project
-sadl intake               # Print structured intake questions
+sadl intake               # Print or run structured intake
+sadl plan                 # Generate a first roadmap from the PRD
 sadl start [path]         # Show agent bootstrap instructions
 sadl status [path]        # Show active task, state, git, validation summary
 sadl validate [path]      # Check required files, state, secrets, manifest
+sadl run [path]           # Run configured lint/test/typecheck/build commands
 sadl manifest [path]      # Generate file hash manifest
 sadl checkpoint [path]    # Update state and append session logs
 sadl dream [path]         # Analyze session logs and propose improvements
+sadl dashboard [path]     # Generate a local HTML session dashboard
+sadl branch [path]        # Create a task branch
+sadl worktree [path]      # Create a task worktree
+sadl ci [path]            # Add a GitHub Action for SADL validation
+sadl policy [path]        # List/apply policy packs
+sadl adapter [path]       # Generate tool-specific adapter instructions
 sadl commit [path]        # Validate, git add, and git commit
 ```
 
@@ -123,7 +154,13 @@ npx create-sadl-project my-app
 cd my-app
 ```
 
-2. Fill the required planning files:
+2. Fill the required planning files manually, or run the intake wizard:
+
+```bash
+sadl intake . --write
+```
+
+Manual files:
 
 ```text
 docs/01_PRD.md
@@ -139,7 +176,13 @@ docs/setup-env.md
 sadl validate . --strict
 ```
 
-4. Ask an AI assistant to generate the roadmap:
+4. Generate a first roadmap:
+
+```bash
+sadl plan . --write
+```
+
+Then ask an AI assistant to refine it if needed:
 
 ```text
 Use SADL.
@@ -206,6 +249,74 @@ sadl commit . --message "sadl: complete auth UI shell"
 
 The commit command runs SADL validation first and refuses to commit when hard failures are present.
 
+## Prototype-Friendly Flow
+
+For fast prototypes, use the smallest useful loop:
+
+```bash
+npx create-sadl-project@next prototype-app
+cd prototype-app
+npx --package create-sadl-project@next sadl intake . --write
+npx --package create-sadl-project@next sadl plan . --write
+npx --package create-sadl-project@next sadl policy . --apply solo
+npx --package create-sadl-project@next sadl validate .
+```
+
+Then hand the repo to your AI assistant with the SADL prompt. When the session ends:
+
+```bash
+npx --package create-sadl-project@next sadl checkpoint . --task "1.1 First MVP slice" --status DONE --validation "passed"
+npx --package create-sadl-project@next sadl dashboard .
+```
+
+For a SaaS prototype:
+
+```bash
+npx --package create-sadl-project@next sadl policy . --apply startup-saas
+npx --package create-sadl-project@next sadl ci .
+```
+
+For parallel agent work:
+
+```bash
+npx --package create-sadl-project@next sadl branch . --task "1.2 Auth UI"
+npx --package create-sadl-project@next sadl worktree . --task "1.3 Billing webhook" --dir ../billing-webhook
+```
+
+For assistant-specific setup:
+
+```bash
+npx --package create-sadl-project@next sadl adapter . --tool claude-code
+npx --package create-sadl-project@next sadl adapter . --tool cursor
+npx --package create-sadl-project@next sadl adapter . --tool github-copilot
+```
+
+## Current Capability Boundary
+
+Implemented in the current development branch:
+
+- repo template and CLI
+- intake wizard and JSON-backed intake
+- PRD/spec/env generation from intake
+- roadmap generation
+- local schema validation for SADL config and session logs
+- configured validation command runner
+- branch/worktree helpers
+- GitHub Action generation
+- static dashboard generation
+- policy packs
+- adapter file generation
+- improved dream analytics
+
+Planned but not implemented yet:
+
+- full MCP server
+- native IDE extensions
+- hosted dashboard
+- true model routing
+- automatic complex merge conflict resolution
+- autonomous production deploys
+
 ## Publishing To npm
 
 You need an npm account and a package name that is available.
@@ -244,8 +355,16 @@ npm pack --dry-run
 
 4. Publish:
 
+For the stable package:
+
 ```bash
-npm publish
+npm publish --otp YOUR_OTP
+```
+
+For a prerelease such as `0.2.0-next.0`, use the `next` tag so it does not replace stable `latest`:
+
+```bash
+npm publish --tag next --otp YOUR_OTP
 ```
 
 For a scoped public package:
