@@ -4,7 +4,7 @@ Adapters are thin compatibility layers. They should not become the source of tru
 
 ```text
 AGENTS.md
-.sadl.config.json
+.sadl/config.json
 docs/01_PRD.md
 docs/02_ROADMAP.md
 docs/03_STATE.md
@@ -13,4 +13,3 @@ docs/05_SESSION_LOG.md
 ```
 
 Use these files as setup notes for specific assistants or IDEs.
-

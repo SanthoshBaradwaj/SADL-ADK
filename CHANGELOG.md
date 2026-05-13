@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added the new `.sadl/` state foundation with committed config/traceability files and local-only runtime, approvals, and telemetry files.
+- Added `sadl migrate` for older projects and expanded doctor/validation checks for the new machine-readable state.
+- Added JSON schemas for config, traceability, runtime, approvals, and telemetry state.
+- Updated docs and adapters to prefer `.sadl/config.json` while keeping `.sadl.config.json` as a legacy compatibility path.
 - Updated README and usage docs for the promoted npm dist-tags.
 - Documented PRD intake modes, AI workflow configuration, supported assistants, and current handoff boundaries.
 

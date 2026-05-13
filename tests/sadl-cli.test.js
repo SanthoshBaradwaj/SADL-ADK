@@ -31,11 +31,15 @@ try {
   const project = path.join(tempRoot, "my-app");
   const createdProject = path.join(tempRoot, "created-app");
   const interactiveProject = path.join(tempRoot, "interactive-app");
+  const legacyProject = path.join(tempRoot, "legacy-app");
 
   let result = run(["init", project]);
   assertOk(result, "init");
   assert(fs.existsSync(path.join(project, "AGENTS.md")), "AGENTS.md should exist");
   assert(fs.existsSync(path.join(project, "docs", "01_PRD.md")), "PRD should exist");
+  assert(fs.existsSync(path.join(project, ".sadl", "config.json")), ".sadl/config.json should exist");
+  assert(fs.existsSync(path.join(project, ".sadl", "traceability.json")), ".sadl/traceability.json should exist");
+  assert(fs.existsSync(path.join(project, ".sadl", "runtime.json")), ".sadl/runtime.json should exist");
   assert(fs.existsSync(path.join(project, ".sadl_manifest.json")), "manifest should exist");
 
   result = spawnSync(process.execPath, [createCli, createdProject], {
@@ -76,6 +80,54 @@ try {
     /tiny notes prototype/,
     "interactive intake should write PRD"
   );
+
+  fs.mkdirSync(path.join(legacyProject, "docs", "decisions"), { recursive: true });
+  fs.mkdirSync(path.join(legacyProject, "docs", "session_logs"), { recursive: true });
+  fs.mkdirSync(path.join(legacyProject, "src"), { recursive: true });
+  fs.mkdirSync(path.join(legacyProject, "tests"), { recursive: true });
+  fs.writeFileSync(path.join(legacyProject, "AGENTS.md"), "# AGENTS\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, ".gitignore"), ".env\n.env.*\n!.env.example\n*.pem\n*.key\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, ".env.example"), "", "utf8");
+  fs.writeFileSync(path.join(legacyProject, "docs", "01_PRD.md"), "# PRD\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, "docs", "02_ROADMAP.md"), "- [TODO] Legacy task\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, "docs", "03_STATE.md"), "## SESSION EXIT STATUS\n- Task Status: WIP - Legacy\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, "docs", "04_ARCH_SPEC.md"), "# Arch\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, "docs", "05_SESSION_LOG.md"), "# Log\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, "docs", "setup-env.md"), "# Env\n", "utf8");
+  fs.writeFileSync(path.join(legacyProject, ".sadl.config.json"), JSON.stringify({
+    schemaVersion: "1.0",
+    sadlVersion: "0.1.1",
+    profile: "standard",
+    protectedPaths: ["AGENTS.md"],
+    writablePaths: ["src", "tests"],
+    roadmapStates: ["TODO", "WIP", "DONE", "BLOCKED"],
+    validation: { lint: [], test: [], typecheck: [], build: [] },
+    toolBudgets: {
+      maxSearchCommandsPerAudit: 10,
+      maxRepeatedCommand: 2,
+      maxFailedTestRetries: 3,
+      maxNoProgressMinutes: 10,
+      approvalWaitMode: "pause"
+    },
+    tokenPolicy: {
+      hostManaged: true,
+      handoffThresholdPercent: 85,
+      reserveFinalPercent: 10
+    },
+    modelPolicy: {},
+    approvalPolicy: {},
+    commitPolicy: {},
+    secretPolicy: {}
+  }, null, 2), "utf8");
+  result = run(["migrate", legacyProject]);
+  assertOk(result, "legacy migrate");
+  assert(fs.existsSync(path.join(legacyProject, ".sadl", "config.json")), "migrate should create .sadl/config.json");
+  assert(fs.existsSync(path.join(legacyProject, ".sadl", "traceability.json")), "migrate should create traceability");
+  assert(fs.existsSync(path.join(legacyProject, ".sadl", "approvals.json")), "migrate should create local approvals");
+  assert(fs.existsSync(path.join(legacyProject, ".sadl.config.json.bak")), "migrate should back up legacy config");
+  assert.match(fs.readFileSync(path.join(legacyProject, ".gitignore"), "utf8"), /\.sadl\/runtime\.json/, "migrate should protect runtime state");
+  result = run(["doctor", legacyProject]);
+  assertOk(result, "legacy doctor after migrate");
 
   const intakePath = path.join(tempRoot, "intake.json");
   fs.writeFileSync(intakePath, JSON.stringify({
@@ -134,7 +186,7 @@ try {
 
   result = run(["policy", project, "--apply", "startup-saas"]);
   assertOk(result, "policy apply");
-  const config = JSON.parse(fs.readFileSync(path.join(project, ".sadl.config.json"), "utf8"));
+  const config = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "config.json"), "utf8"));
   assert.strictEqual(config.policyPack, "startup-saas", "policy pack should be recorded");
 
   result = run(["validate", project]);

@@ -12,7 +12,7 @@ Complete:
 ```text
 docs/01_PRD.md
 docs/04_ARCH_SPEC.md
-.sadl.config.json
+.sadl/config.json
 .env.example
 ```
 
@@ -46,6 +46,17 @@ npx --package create-sadl-project@latest sadl validate .
 
 Then fill the missing PRD and architecture sections. Do not start code work until `sadl validate --strict` passes or every failure is intentionally accepted by a human.
 
+## Migrating Older SADL Projects
+
+Projects created before the `.sadl/` state contract can be upgraded in place:
+
+```bash
+npx --package create-sadl-project@latest sadl migrate .
+npx --package create-sadl-project@latest sadl doctor .
+```
+
+Migration creates `.sadl/config.json`, `.sadl/traceability.json`, and local-only runtime, approval, and telemetry files. Legacy `.sadl.config.json` is backed up and left in place for compatibility.
+
 ## Agent Prompt
 
 Use this with any coding assistant:
@@ -53,7 +64,7 @@ Use this with any coding assistant:
 ```text
 Use SADL for this repository.
 Follow AGENTS.md exactly.
-Read .sadl.config.json, docs/03_STATE.md, and the active item in docs/02_ROADMAP.md.
+Read .sadl/config.json, docs/03_STATE.md, and the active item in docs/02_ROADMAP.md.
 Work only on the active roadmap item.
 Do not read secret values.
 Validate using configured commands.
@@ -83,7 +94,7 @@ The commit command refuses to commit if SADL validation has hard failures.
 
 ## Validation Runner
 
-Run configured commands from `.sadl.config.json`:
+Run configured commands from `.sadl/config.json`:
 
 ```bash
 npx --package create-sadl-project sadl run . --category test

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/telemetry.schema.json",
+  "title": "SADL Local Telemetry",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sadlVersion",
+    "sessions"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sadlVersion": {
+      "type": "string"
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "inputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "outputTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "estimatedCostUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "source": {
+            "enum": [
+              "adapter",
+              "agent_reported",
+              "manual",
+              "estimated",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

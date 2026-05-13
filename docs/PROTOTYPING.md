@@ -26,7 +26,7 @@ Then give any AI coding assistant this prompt:
 ```text
 Use SADL.
 Follow AGENTS.md.
-Read .sadl.config.json, docs/03_STATE.md, and docs/02_ROADMAP.md.
+Read .sadl/config.json, docs/03_STATE.md, and docs/02_ROADMAP.md.
 Work on the first TODO task only.
 Validate, checkpoint, and commit if validation passes.
 ```

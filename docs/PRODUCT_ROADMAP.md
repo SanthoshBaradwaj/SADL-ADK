@@ -36,7 +36,7 @@ This roadmap captures the planned direction after the `0.1.x` MVP. SADL should r
 
 ## 0.3.x: Validation Runner
 
-- Execute configured lint, test, typecheck, and build commands from `.sadl.config.json`.
+- Execute configured lint, test, typecheck, and build commands from `.sadl/config.json`.
 - Record validation results into session logs.
 - Add command timeout handling.
 - Add repeated-command loop detection.
@@ -103,7 +103,7 @@ This roadmap captures the planned direction after the `0.1.x` MVP. SADL should r
 - Propose updates to:
   - `AGENTS.md`
   - `docs/04_ARCH_SPEC.md`
-  - `.sadl.config.json`
+  - `.sadl/config.json`
   - `docs/02_ROADMAP.md`
 - Require human approval before applying any proposed rule or architecture change.
 
@@ -149,4 +149,3 @@ This roadmap captures the planned direction after the `0.1.x` MVP. SADL should r
 - Silent self-modifying agent rules.
 - Automatic resolution of complex merge conflicts.
 - Vendor-specific lock-in as a requirement.
-

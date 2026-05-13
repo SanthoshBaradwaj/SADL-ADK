@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/traceability.schema.json",
+  "title": "SADL Traceability Ledger",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sadlVersion",
+    "requirements",
+    "acceptanceCriteria",
+    "tasks",
+    "evidence"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sadlVersion": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string"
+    },
+    "requirements": {
+      "type": "object",
+      "patternProperties": {
+        "^(FR|NFR|US)-[0-9]+$": {
+          "$ref": "#/$defs/requirement"
+        }
+      },
+      "additionalProperties": false
+    },
+    "acceptanceCriteria": {
+      "type": "object",
+      "patternProperties": {
+        "^AC-[0-9]+$": {
+          "$ref": "#/$defs/acceptanceCriterion"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tasks": {
+      "type": "object",
+      "patternProperties": {
+        "^TASK-[0-9]+$": {
+          "$ref": "#/$defs/task"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "status": {
+      "enum": [
+        "TODO",
+        "WIP",
+        "AGENT_VERIFIED",
+        "PENDING_HUMAN_REVIEW",
+        "ACCEPTED",
+        "REJECTED",
+        "BLOCKED"
+      ]
+    },
+    "requirement": {
+      "type": "object",
+      "required": [
+        "title",
+        "status"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "source": {
+          "type": "string"
+        },
+        "tainted": {
+          "type": "boolean"
+        },
+        "humanAcceptance": {
+          "enum": [
+            "PENDING",
+            "ACCEPTED",
+            "REJECTED"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "acceptanceCriterion": {
+      "type": "object",
+      "required": [
+        "requirementId",
+        "description",
+        "status"
+      ],
+      "properties": {
+        "requirementId": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "required": [
+        "requirementIds",
+        "status"
+      ],
+      "properties": {
+        "requirementIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "acceptanceCriteriaIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parallelSafe": {
+          "type": "boolean"
+        },
+        "riskLevel": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "requiresHumanReview": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "requirementId": {
+          "type": "string"
+        },
+        "acceptanceCriteriaIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "filesTouched": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "testsRun": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "validationStatus": {
+          "enum": [
+            "UNKNOWN",
+            "PASSED",
+            "FAILED",
+            "SKIPPED"
+          ]
+        },
+        "humanAcceptance": {
+          "enum": [
+            "PENDING",
+            "ACCEPTED",
+            "REJECTED"
+          ]
+        },
+        "commitHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

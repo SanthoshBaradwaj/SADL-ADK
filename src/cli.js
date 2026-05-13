@@ -16,7 +16,8 @@ const SADL_VERSION = require("../package.json").version;
 
 const REQUIRED_FILES = [
   "AGENTS.md",
-  ".sadl.config.json",
+  ".sadl/config.json",
+  ".sadl/traceability.json",
   ".gitignore",
   ".env.example",
   "docs/01_PRD.md",
@@ -28,15 +29,28 @@ const REQUIRED_FILES = [
 ];
 
 const REQUIRED_DIRS = [
+  ".sadl",
   "docs/decisions",
   "docs/session_logs",
   "src",
   "tests"
 ];
 
+const LOCAL_SADL_FILES = [
+  ".sadl/runtime.json",
+  ".sadl/approvals.json",
+  ".sadl/telemetry.json"
+];
+
+const LOCAL_SADL_DIRS = [
+  ".sadl/cache",
+  ".sadl/locks"
+];
+
 const PROTECTED_DEFAULTS = [
   "AGENTS.md",
   ".agent_rules.md",
+  ".sadl/config.json",
   "docs/01_PRD.md",
   "docs/04_ARCH_SPEC.md"
 ];
@@ -72,6 +86,8 @@ function main(argv) {
       return Promise.resolve(commandInit(args, options, { adopt: false }));
     case "adopt":
       return Promise.resolve(commandInit(args, options, { adopt: true }));
+    case "migrate":
+      return Promise.resolve(commandMigrate(args, options));
     case "status":
       return Promise.resolve(commandStatus(args, options));
     case "validate":
@@ -147,6 +163,7 @@ function printHelp() {
 Usage:
   sadl init [path] [--profile lite|standard|enterprise] [--force]
   sadl adopt [path] [--profile lite|standard|enterprise]
+  sadl migrate [path]
   sadl intake [path] [--write] [--from-json intake.json]
   sadl plan [path] [--write]
   sadl start [path]
@@ -192,6 +209,7 @@ function commandInit(args, options, meta) {
   for (const dir of REQUIRED_DIRS) {
     ensureDir(path.join(targetDir, dir));
   }
+  ensureSadlState(targetDir, { profile, force: Boolean(options.force) });
 
   if (meta.adopt) {
     mergeGitignore(targetDir);
@@ -202,6 +220,41 @@ function commandInit(args, options, meta) {
   console.log(`${meta.adopt ? "Adopted" : "Initialized"} SADL ${profile} project at ${targetDir}`);
   console.log(`Created ${result.created} files, skipped ${result.skipped} existing files.`);
   console.log("Next: fill docs/01_PRD.md, then run: sadl validate .");
+}
+
+function commandMigrate(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  const profile = String(options.profile || "standard").toLowerCase();
+  const legacyConfigPath = path.join(projectDir, ".sadl.config.json");
+  const newConfigPath = path.join(projectDir, ".sadl/config.json");
+  const hadNewConfig = fs.existsSync(newConfigPath);
+  const hadLegacyConfig = fs.existsSync(legacyConfigPath);
+
+  ensureDir(projectDir);
+  ensureSadlState(projectDir, { profile, force: Boolean(options.force) });
+  mergeGitignore(projectDir);
+
+  if (!hadNewConfig && hadLegacyConfig) {
+    const backupPath = path.join(projectDir, ".sadl.config.json.bak");
+    if (!fs.existsSync(backupPath)) {
+      fs.copyFileSync(legacyConfigPath, backupPath);
+    }
+    if (options.removeLegacy) {
+      fs.unlinkSync(legacyConfigPath);
+    }
+  }
+
+  commandManifest([projectDir], { quiet: true });
+
+  console.log(`SADL migration complete at ${projectDir}`);
+  console.log("- Machine state initialized under .sadl/.");
+  console.log("- Local runtime, approvals, and telemetry are protected by .gitignore.");
+  if (hadLegacyConfig) {
+    console.log("- Legacy .sadl.config.json was backed up to .sadl.config.json.bak.");
+  }
+  if (!options.removeLegacy) {
+    console.log("- Legacy .sadl.config.json was left in place for compatibility.");
+  }
 }
 
 async function commandIntake(args, options) {
@@ -257,7 +310,7 @@ function commandStart(args) {
   console.log(`Last state: ${state || "No state summary found"}`);
   console.log("");
   console.log("Agent bootstrap order:");
-  console.log("1. Read AGENTS.md and .sadl.config.json.");
+  console.log("1. Read AGENTS.md and .sadl/config.json.");
   console.log("2. Read docs/03_STATE.md and active item in docs/02_ROADMAP.md.");
   console.log("3. Read only relevant sections of docs/04_ARCH_SPEC.md and docs/01_PRD.md.");
   console.log("4. Execute the scoped task, validate, checkpoint, then commit if valid.");
@@ -377,11 +430,12 @@ function commandPolicy(args, options) {
   }
 
   const policy = readJson(path.join(POLICY_DIR, `${policyName}.json`));
-  const configPath = path.join(projectDir, ".sadl.config.json");
+  const configPath = getConfigPath(projectDir) || path.join(projectDir, ".sadl/config.json");
   const config = readJson(configPath);
-  if (!config) throw new Error("missing or invalid .sadl.config.json");
+  if (!config) throw new Error("missing or invalid SADL config. Run sadl migrate.");
   const merged = mergePolicy(config, policy);
   writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`);
+  syncLegacyConfigIfPresent(projectDir, merged);
   commandManifest([projectDir], { quiet: true });
   console.log(`Applied policy pack ${policyName}`);
 }
@@ -441,7 +495,7 @@ function commandRun(args, options) {
   const failures = [];
   const config = readConfig(projectDir, failures);
   if (!config) {
-    throw new Error(failures[0] || "missing .sadl.config.json");
+    throw new Error(failures[0] || "missing SADL config. Run sadl migrate.");
   }
 
   const result = executeValidationCommands(projectDir, config, {
@@ -484,14 +538,18 @@ function collectValidation(projectDir, options) {
   const config = readConfig(projectDir, failures);
   checks.configValid = Boolean(config);
   if (config) {
-    const configSchema = readJson(path.join(SCHEMA_DIR, "sadl-config.schema.json"));
+    const configPath = getConfigPath(projectDir);
+    const configRel = configPath ? normalizePath(path.relative(projectDir, configPath)) : ".sadl/config.json";
+    const configSchemaName = configRel === ".sadl/config.json" ? "config.schema.json" : "sadl-config.schema.json";
+    const configSchema = readJson(path.join(SCHEMA_DIR, configSchemaName));
     const schemaResult = validateSchema(configSchema, config);
     checks.configSchemaValid = schemaResult.ok;
     for (const error of schemaResult.errors) {
-      failures.push(`.sadl.config.json schema: ${error}`);
+      failures.push(`${configRel} schema: ${error}`);
     }
   }
 
+  checks.machineStateValid = checkSadlStateFiles(projectDir, warnings, failures);
   checks.gitignoreSecrets = checkGitignore(projectDir, warnings, failures);
   checks.noTrackedSecrets = checkTrackedSecrets(projectDir, failures, warnings);
   checks.noSecretLeaks = scanSecretLeaks(projectDir, warnings);
@@ -626,7 +684,7 @@ function commandManifest(args, options) {
     files: {}
   };
 
-  const includeRoots = ["AGENTS.md", ".sadl.config.json", "docs", "src", "tests", "package.json", "pyproject.toml"];
+  const includeRoots = ["AGENTS.md", ".sadl.config.json", ".sadl/config.json", ".sadl/traceability.json", "docs", "src", "tests", "package.json", "pyproject.toml"];
   for (const root of includeRoots) {
     const fullPath = path.join(projectDir, root);
     if (!fs.existsSync(fullPath)) continue;
@@ -664,7 +722,7 @@ function commandDream(args, options) {
 Generated: ${timestamp}
 
 ## Purpose
-This report is review-only. It may suggest improvements, but agents must not auto-apply changes to AGENTS.md, .sadl.config.json, or architecture docs without human approval.
+This report is review-only. It may suggest improvements, but agents must not auto-apply changes to AGENTS.md, .sadl/config.json, or architecture docs without human approval.
 
 ## Session Summary
 - Sessions analyzed: ${logs.length}
@@ -710,12 +768,12 @@ function commandCommit(args, options) {
 }
 
 function readConfig(projectDir, failures) {
-  const configPath = path.join(projectDir, ".sadl.config.json");
-  if (!fs.existsSync(configPath)) return null;
+  const configPath = getConfigPath(projectDir);
+  if (!configPath) return null;
   try {
     return JSON.parse(fs.readFileSync(configPath, "utf8"));
   } catch (error) {
-    failures.push(`Invalid .sadl.config.json: ${error.message}`);
+    failures.push(`Invalid ${normalizePath(path.relative(projectDir, configPath))}: ${error.message}`);
     return null;
   }
 }
@@ -851,7 +909,7 @@ ${intake.dataModel || "No special data requirements recorded."}
 ${formatList(intake.integrations || [])}
 
 ## 9. Operational Requirements
-- Validation commands are defined in \`.sadl.config.json\`.
+- Validation commands are defined in \`.sadl/config.json\`.
 - Secrets are documented by name only in \`.env.example\` and \`docs/setup-env.md\`.
 
 ## 10. Open Questions
@@ -941,7 +999,7 @@ Agents may read this file and \`.env.example\` for variable names. Agents must n
 }
 
 function updateConfigFromIntake(projectDir, intake) {
-  const configPath = path.join(projectDir, ".sadl.config.json");
+  const configPath = getConfigPath(projectDir) || path.join(projectDir, ".sadl/config.json");
   const config = readJson(configPath);
   if (!config) return;
   config.validation = {
@@ -956,6 +1014,7 @@ function updateConfigFromIntake(projectDir, intake) {
     ]));
   }
   writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  syncLegacyConfigIfPresent(projectDir, config);
 }
 
 function executeValidationCommands(projectDir, config, options = {}) {
@@ -1132,7 +1191,7 @@ function mergePolicy(config, policy) {
 }
 
 function buildAdapterFile(tool) {
-  const common = "This repository uses SADL. Follow AGENTS.md as the source of truth. Read .sadl.config.json, docs/03_STATE.md, and docs/02_ROADMAP.md before editing. Do not read .env files or modify protected files without approval.";
+  const common = "This repository uses SADL. Follow AGENTS.md as the source of truth. Read .sadl/config.json, docs/03_STATE.md, and docs/02_ROADMAP.md before editing. Do not read .env files or modify protected files without approval.";
   const adapters = {
     "claude-code": {
       path: "CLAUDE.md",
@@ -1171,6 +1230,78 @@ function ensureProject(projectDir) {
       throw new Error(`not a SADL project or missing ${file}. Run sadl init first.`);
     }
   }
+}
+
+function ensureSadlState(projectDir, options = {}) {
+  const profile = String(options.profile || "standard").toLowerCase();
+  ensureDir(path.join(projectDir, ".sadl"));
+  for (const dir of LOCAL_SADL_DIRS) {
+    ensureDir(path.join(projectDir, dir));
+  }
+
+  const configPath = path.join(projectDir, ".sadl/config.json");
+  const legacyConfig = readJson(path.join(projectDir, ".sadl.config.json"));
+  const existingConfig = readJson(configPath);
+  if (options.force || !existingConfig) {
+    const merged = normalizeSadlConfig(existingConfig || legacyConfig || {}, profile);
+    writeFile(configPath, `${JSON.stringify(merged, null, 2)}\n`);
+  }
+
+  ensureJsonStateFile(projectDir, ".sadl/traceability.json", () => templateJson(".sadl/traceability.json", profile), options);
+  ensureJsonStateFile(projectDir, ".sadl/runtime.json", () => templateJson(".sadl/runtime.json", profile), options);
+  ensureJsonStateFile(projectDir, ".sadl/approvals.json", () => templateJson(".sadl/approvals.json", profile), options);
+  ensureJsonStateFile(projectDir, ".sadl/telemetry.json", () => templateJson(".sadl/telemetry.json", profile), options);
+}
+
+function ensureJsonStateFile(projectDir, relPath, factory, options = {}) {
+  const filePath = path.join(projectDir, relPath);
+  if (!options.force && fs.existsSync(filePath)) return;
+  writeFile(filePath, `${JSON.stringify(factory(), null, 2)}\n`);
+}
+
+function templateJson(relPath, profile) {
+  const templatePath = path.join(TEMPLATE_DIR, relPath);
+  const content = applyReplacements(fs.readFileSync(templatePath, "utf8"), {
+    "__SADL_PROFILE__": profile,
+    "__SADL_VERSION__": SADL_VERSION
+  });
+  return JSON.parse(content);
+}
+
+function normalizeSadlConfig(config, profile) {
+  const base = templateJson(".sadl/config.json", profile);
+  const merged = deepMerge(base, config || {});
+  merged.$schema = "https://sadl.dev/schemas/config.schema.json";
+  merged.schemaVersion = merged.schemaVersion || "1.0";
+  merged.sadlVersion = SADL_VERSION;
+  merged.profile = ["lite", "standard", "enterprise"].includes(merged.profile) ? merged.profile : profile;
+  merged.security = {
+    requireCommandApproval: true,
+    blockSecrets: true,
+    ...(merged.security || {})
+  };
+  merged.executionPolicy = ["prototype", "enterprise", "regulated"].includes(merged.executionPolicy)
+    ? merged.executionPolicy
+    : "enterprise";
+  return merged;
+}
+
+function getConfigPath(projectDir) {
+  const primary = path.join(projectDir, ".sadl/config.json");
+  if (fs.existsSync(primary)) return primary;
+  const legacy = path.join(projectDir, ".sadl.config.json");
+  if (fs.existsSync(legacy)) return legacy;
+  return null;
+}
+
+function syncLegacyConfigIfPresent(projectDir, config) {
+  const legacyPath = path.join(projectDir, ".sadl.config.json");
+  if (!fs.existsSync(legacyPath)) return;
+  const legacy = {
+    ...config,
+    $schema: "https://sadl.dev/schemas/sadl-config.schema.json"
+  };
+  writeFile(legacyPath, `${JSON.stringify(legacy, null, 2)}\n`);
 }
 
 function copyTree(sourceDir, targetDir, options) {
@@ -1262,13 +1393,66 @@ function checkGitignore(projectDir, warnings, failures) {
     return false;
   }
   const content = fs.readFileSync(gitignorePath, "utf8");
-  const required = [".env", ".env.*", "*.pem", "*.key"];
+  const required = [
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    ".sadl/runtime.json",
+    ".sadl/approvals.json",
+    ".sadl/telemetry.json",
+    ".sadl/cache/",
+    ".sadl/locks/"
+  ];
   const missing = required.filter((pattern) => !content.includes(pattern));
   if (missing.length > 0) {
     warnings.push(`.gitignore is missing recommended secret patterns: ${missing.join(", ")}`);
     return false;
   }
   return true;
+}
+
+function checkSadlStateFiles(projectDir, warnings, failures) {
+  const stateFiles = [
+    [".sadl/config.json", "config.schema.json", true],
+    [".sadl/traceability.json", "traceability.schema.json", true],
+    [".sadl/runtime.json", "runtime.schema.json", false],
+    [".sadl/approvals.json", "approvals.schema.json", false],
+    [".sadl/telemetry.json", "telemetry.schema.json", false]
+  ];
+  let ok = true;
+
+  for (const [relPath, schemaName, committed] of stateFiles) {
+    const filePath = path.join(projectDir, relPath);
+    if (!fs.existsSync(filePath)) {
+      ok = false;
+      const message = `Missing SADL ${committed ? "team" : "local"} state file: ${relPath}. Run sadl migrate.`;
+      if (committed) failures.push(message);
+      else warnings.push(message);
+      continue;
+    }
+    const value = readJson(filePath);
+    if (!value) {
+      ok = false;
+      failures.push(`Invalid SADL state JSON: ${relPath}`);
+      continue;
+    }
+    const schema = readJson(path.join(SCHEMA_DIR, schemaName));
+    const result = validateSchema(schema, value);
+    if (!result.ok) {
+      ok = false;
+      failures.push(`${relPath} schema: ${result.errors.join("; ")}`);
+    }
+  }
+
+  for (const relPath of LOCAL_SADL_DIRS) {
+    if (!fs.existsSync(path.join(projectDir, relPath))) {
+      warnings.push(`Missing SADL local directory: ${relPath}. Run sadl migrate.`);
+      ok = false;
+    }
+  }
+
+  return ok;
 }
 
 function checkTrackedSecrets(projectDir, failures, warnings) {
@@ -1281,6 +1465,7 @@ function checkTrackedSecrets(projectDir, failures, warnings) {
   const secretFiles = tracked.filter((file) => {
     const normalized = normalizePath(file);
     if (normalized === ".env.example" || normalized.endsWith("/.env.example")) return false;
+    if (LOCAL_SADL_FILES.includes(normalized) || normalized.startsWith(".sadl/cache/") || normalized.startsWith(".sadl/locks/")) return true;
     return SECRET_FILE_PATTERNS.some((pattern) => pattern.test(path.basename(file)) || pattern.test(file));
   });
   if (secretFiles.length > 0) {
@@ -1351,10 +1536,24 @@ function checkManifest(projectDir, warnings) {
 function mergeGitignore(projectDir) {
   const gitignorePath = path.join(projectDir, ".gitignore");
   const existing = readTextIfExists(gitignorePath);
-  const additions = [".env", ".env.*", "!.env.example", "*.pem", "*.key", "*.p12", "*.pfx"];
+  const additions = [
+    ".env",
+    ".env.*",
+    "!.env.example",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    ".sadlignore-secrets",
+    ".sadl/runtime.json",
+    ".sadl/approvals.json",
+    ".sadl/telemetry.json",
+    ".sadl/cache/",
+    ".sadl/locks/"
+  ];
   const missing = additions.filter((line) => !existing.includes(line));
   if (missing.length > 0) {
-    fs.appendFileSync(gitignorePath, `\n# SADL secret safety\n${missing.join("\n")}\n`, "utf8");
+    fs.appendFileSync(gitignorePath, `\n# SADL secret and local state safety\n${missing.join("\n")}\n`, "utf8");
   }
 }
 
@@ -1543,7 +1742,7 @@ function buildDreamSuggestions(commandCounts, blockerCounts, failedTasks, metric
   if ((metrics.statusCounts || []).some(([status, count]) => status === "FAILED_TESTS" && count > 1)) {
     suggestions.push("- Add a test-failure BKM or tighten validation commands for recurring failed tests.");
   }
-  suggestions.push("- Human review required before changing AGENTS.md, .sadl.config.json, or docs/04_ARCH_SPEC.md.");
+  suggestions.push("- Human review required before changing AGENTS.md, .sadl/config.json, or docs/04_ARCH_SPEC.md.");
   return suggestions.join("\n");
 }
 

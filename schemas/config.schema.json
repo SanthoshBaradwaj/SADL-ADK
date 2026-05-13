@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/config.schema.json",
+  "title": "SADL Team Configuration",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sadlVersion",
+    "profile",
+    "security",
+    "executionPolicy",
+    "protectedPaths",
+    "writablePaths",
+    "roadmapStates",
+    "validation",
+    "toolBudgets",
+    "tokenPolicy",
+    "modelPolicy",
+    "approvalPolicy",
+    "commitPolicy",
+    "secretPolicy"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sadlVersion": {
+      "type": "string"
+    },
+    "profile": {
+      "enum": [
+        "lite",
+        "standard",
+        "enterprise"
+      ]
+    },
+    "security": {
+      "type": "object",
+      "required": [
+        "requireCommandApproval",
+        "blockSecrets"
+      ],
+      "properties": {
+        "requireCommandApproval": {
+          "type": "boolean"
+        },
+        "blockSecrets": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "executionPolicy": {
+      "enum": [
+        "prototype",
+        "enterprise",
+        "regulated"
+      ]
+    },
+    "protectedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "writablePaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "roadmapStates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sessionExitStates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "lint": {
+          "$ref": "#/$defs/commandList"
+        },
+        "test": {
+          "$ref": "#/$defs/commandList"
+        },
+        "typecheck": {
+          "$ref": "#/$defs/commandList"
+        },
+        "build": {
+          "$ref": "#/$defs/commandList"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/commandList"
+      }
+    },
+    "toolBudgets": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tokenPolicy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "modelPolicy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "approvalPolicy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "commitPolicy": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "secretPolicy": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "commandList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

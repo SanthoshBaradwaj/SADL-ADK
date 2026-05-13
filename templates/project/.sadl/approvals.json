@@ -1,0 +1,7 @@
+{
+  "$schema": "https://sadl.dev/schemas/approvals.schema.json",
+  "schemaVersion": "1.0",
+  "sadlVersion": "__SADL_VERSION__",
+  "trustedCommands": [],
+  "secretOverrides": []
+}

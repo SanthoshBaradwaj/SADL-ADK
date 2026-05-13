@@ -22,11 +22,16 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - Universal project template for stateless AI development.
 - Dependency-light Node CLI for initialization, validation, checkpoints, logs, and reflection.
 - Structured Markdown docs for PRD, roadmap, state, architecture, and session history.
-- Machine-readable config and session logs.
+- Machine-readable team state in `.sadl/config.json` and `.sadl/traceability.json`.
+- Local-only runtime, approval, and telemetry state.
 - Secret-safe defaults.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
+
+## CLI First, UI Next
+
+SADL starts as a CLI because the control plane must be reliable before a UI observes it. Today `sadl dashboard` generates a local static report. A future `sadl dashboard --live` cockpit will watch `.sadl/` state transitions, validation output, approval gates, blockers, and traceability health without requiring a cloud backend.
 
 ## Repository Layout
 
@@ -48,7 +53,13 @@ A generated SADL project contains:
 project-root/
 +-- AGENTS.md                  # Primary agent operating rules
 +-- .agent_rules.md            # Compatibility alias for agents that expect it
-+-- .sadl.config.json          # Host policy, validation, token, model, secret rules
++-- .sadl/
+|   +-- config.json            # Team policy, validation, token, model, secret rules
+|   +-- traceability.json      # Requirement/task/evidence ledger
+|   +-- runtime.json           # Local-only session state, gitignored
+|   +-- approvals.json         # Local-only command/secret approvals, gitignored
+|   +-- telemetry.json         # Local-only token/cost telemetry, gitignored
++-- .sadl.config.json          # Legacy compatibility config
 +-- .sadl_manifest.json        # Generated hash manifest
 +-- .env.example               # Secret names only, never values
 +-- docs/
@@ -170,7 +181,7 @@ Manual files:
 ```text
 docs/01_PRD.md
 docs/04_ARCH_SPEC.md
-.sadl.config.json
+.sadl/config.json
 .env.example
 docs/setup-env.md
 ```
@@ -191,7 +202,7 @@ Then ask an AI assistant to refine it if needed:
 
 ```text
 Use SADL.
-Read AGENTS.md, .sadl.config.json, docs/01_PRD.md, and docs/04_ARCH_SPEC.md.
+Read AGENTS.md, .sadl/config.json, docs/01_PRD.md, and docs/04_ARCH_SPEC.md.
 Generate granular tasks in docs/02_ROADMAP.md.
 Do not implement yet.
 Mark the roadmap NEEDS_REVIEW for human approval.
@@ -203,7 +214,7 @@ Mark the roadmap NEEDS_REVIEW for human approval.
 Use SADL.
 Continue the active roadmap task.
 Work only on that task.
-Validate using .sadl.config.json.
+Validate using .sadl/config.json.
 Run sadl checkpoint before stopping.
 Commit relevant files if validation passes.
 ```
@@ -236,7 +247,7 @@ docs/01_PRD.md
 docs/04_ARCH_SPEC.md
 .env.example
 docs/setup-env.md
-.sadl.config.json validation commands
+.sadl/config.json validation commands
 ```
 
 ### Structured JSON Intake
@@ -273,7 +284,7 @@ SADL supports a common pattern for all AI coding assistants:
 
 ```text
 Read AGENTS.md.
-Read .sadl.config.json.
+Read .sadl/config.json.
 Read docs/03_STATE.md.
 Read the active item in docs/02_ROADMAP.md.
 Read relevant parts of docs/04_ARCH_SPEC.md.
@@ -283,7 +294,7 @@ Checkpoint.
 Commit if valid.
 ```
 
-User preferences live in `.sadl.config.json`:
+User preferences live in `.sadl/config.json`:
 
 ```json
 {
@@ -371,12 +382,12 @@ Paste this as the starting instruction:
 ```text
 Use SADL for this repository.
 Follow AGENTS.md exactly.
-Read .sadl.config.json, docs/03_STATE.md, and the active item in docs/02_ROADMAP.md before editing.
+Read .sadl/config.json, docs/03_STATE.md, and the active item in docs/02_ROADMAP.md before editing.
 Read docs/04_ARCH_SPEC.md for technical constraints.
 Do not read .env files or request secret values.
 Work only on the active roadmap task.
 If the task is too large, split it in docs/02_ROADMAP.md and stop for approval.
-Run validation commands from .sadl.config.json.
+Run validation commands from .sadl/config.json.
 Run sadl checkpoint before stopping.
 Commit relevant files if validation passes and commit policy requires it.
 ```

@@ -101,6 +101,7 @@ function validateObject(schema, value, context) {
   }
 
   const properties = schema.properties || {};
+  const patternProperties = schema.patternProperties || {};
   for (const [key, propertySchema] of Object.entries(properties)) {
     if (key in value) {
       validateNode(propertySchema, value[key], {
@@ -110,9 +111,22 @@ function validateObject(schema, value, context) {
     }
   }
 
+  for (const [pattern, propertySchema] of Object.entries(patternProperties)) {
+    const regex = new RegExp(pattern);
+    for (const [key, nestedValue] of Object.entries(value)) {
+      if (!(key in properties) && regex.test(key)) {
+        validateNode(propertySchema, nestedValue, {
+          ...context,
+          path: `${context.path}.${key}`
+        });
+      }
+    }
+  }
+
   if (schema.additionalProperties === false) {
     for (const key of Object.keys(value)) {
-      if (!(key in properties)) {
+      const matchesPattern = Object.keys(patternProperties).some((pattern) => new RegExp(pattern).test(key));
+      if (!(key in properties) && !matchesPattern) {
         context.errors.push(`${context.path}.${key}: additional property not allowed`);
       }
     }

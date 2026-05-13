@@ -1,0 +1,13 @@
+{
+  "$schema": "https://sadl.dev/schemas/runtime.schema.json",
+  "schemaVersion": "1.0",
+  "sadlVersion": "__SADL_VERSION__",
+  "activeSession": {
+    "sessionId": null,
+    "agentId": null,
+    "activeTask": null,
+    "startedAt": null
+  },
+  "taskMetrics": {},
+  "locks": []
+}

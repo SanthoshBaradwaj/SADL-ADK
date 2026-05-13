@@ -1,0 +1,6 @@
+{
+  "$schema": "https://sadl.dev/schemas/telemetry.schema.json",
+  "schemaVersion": "1.0",
+  "sadlVersion": "__SADL_VERSION__",
+  "sessions": []
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://sadl.dev/schemas/traceability.schema.json",
+  "schemaVersion": "1.0",
+  "sadlVersion": "__SADL_VERSION__",
+  "generatedAt": "generated-by-sadl-cli",
+  "requirements": {},
+  "acceptanceCriteria": {},
+  "tasks": {},
+  "evidence": []
+}

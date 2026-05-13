@@ -2,7 +2,7 @@
 
 ## Cold Start
 
-The agent reads `AGENTS.md`, `.sadl.config.json`, `docs/03_STATE.md`, and the active roadmap item. It should not require prior chat history.
+The agent reads `AGENTS.md`, `.sadl/config.json`, `docs/03_STATE.md`, and the active roadmap item. It should not require prior chat history.
 
 ## Model Swap
 
@@ -43,4 +43,3 @@ Production deploys require explicit human approval. SADL may prepare deployment 
 ## Parallel Agents
 
 Parallel agents must operate on separate tasks, branches/worktrees, and file ownership scopes. A coordinator merges after validation.
-

@@ -39,7 +39,7 @@ Document entities, schemas, migrations, and ownership rules.
 - Audit logging:
 
 ## 6. Validation Commands
-These commands should also be mirrored in `.sadl.config.json`.
+These commands should also be mirrored in `.sadl/config.json`.
 
 ```text
 lint:
@@ -53,4 +53,3 @@ List external APIs, rate limits, webhooks, retries, and failure behavior.
 
 ## 8. Architecture Decision Records
 Architecture changes must be proposed as `docs/decisions/ADR-XXXX-title.md` and approved by a human before implementation.
-

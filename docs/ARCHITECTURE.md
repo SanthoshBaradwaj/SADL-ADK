@@ -16,7 +16,11 @@ The repository protocol is portable across IDEs and models.
 
 ```text
 AGENTS.md                  Agent operating rules
-.sadl.config.json          Host and policy configuration
+.sadl/config.json          Team policy and validation configuration
+.sadl/traceability.json    Requirement/task/evidence ledger
+.sadl/runtime.json         Local-only session state
+.sadl/approvals.json       Local-only command and exception approvals
+.sadl/telemetry.json       Local-only token/cost telemetry
 .sadl_manifest.json        Generated hash manifest
 docs/01_PRD.md             Product intent
 docs/02_ROADMAP.md         Task ledger
@@ -64,4 +68,3 @@ Agents should not:
 ## Why Markdown And JSON
 
 Markdown is readable by humans and all agents. JSON gives the host a stricter machine-readable control surface. SADL deliberately avoids depending on one IDE, one vendor, or one model memory system.
-

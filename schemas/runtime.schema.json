@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/runtime.schema.json",
+  "title": "SADL Local Runtime",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sadlVersion",
+    "activeSession",
+    "taskMetrics",
+    "locks"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sadlVersion": {
+      "type": "string"
+    },
+    "activeSession": {
+      "type": "object",
+      "required": [
+        "sessionId",
+        "agentId",
+        "activeTask",
+        "startedAt"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "activeTask": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "taskMetrics": {
+      "type": "object",
+      "patternProperties": {
+        "^TASK-[0-9]+$": {
+          "type": "object",
+          "properties": {
+            "consecutiveFailures": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "lastErrorHash": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lastCommandHash": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "locks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": true
+}

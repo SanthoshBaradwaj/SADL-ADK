@@ -9,9 +9,9 @@ Use the standard SADL files. Codex can read `AGENTS.md` and repository files dir
 ```text
 Use SADL for this repository.
 Follow AGENTS.md.
-Before editing, read .sadl.config.json, docs/03_STATE.md, and the active item in docs/02_ROADMAP.md.
+Before editing, read .sadl/config.json, docs/03_STATE.md, and the active item in docs/02_ROADMAP.md.
 Keep changes scoped to the active task.
-Run validation commands from .sadl.config.json when applicable.
+Run validation commands from .sadl/config.json when applicable.
 Run sadl checkpoint before stopping.
 Commit relevant files if validation passes and commit policy requires it.
 ```
@@ -21,4 +21,3 @@ Commit relevant files if validation passes and commit policy requires it.
 - Keep secrets out of chat.
 - Use branch-per-task for larger work.
 - Use `sadl validate` before final response.
-

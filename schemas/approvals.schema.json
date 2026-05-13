@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sadl.dev/schemas/approvals.schema.json",
+  "title": "SADL Local Approvals",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sadlVersion",
+    "trustedCommands",
+    "secretOverrides"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "sadlVersion": {
+      "type": "string"
+    },
+    "trustedCommands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "fingerprint",
+          "command",
+          "approvedAt"
+        ],
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approvedAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "secretOverrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "patternHash",
+          "reason",
+          "approvedAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "patternHash": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "approvedAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

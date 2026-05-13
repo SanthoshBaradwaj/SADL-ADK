@@ -1,5 +1,5 @@
 {
-  "$schema": "https://sadl.dev/schemas/sadl-config.schema.json",
+  "$schema": "https://sadl.dev/schemas/config.schema.json",
   "schemaVersion": "1.0",
   "sadlVersion": "__SADL_VERSION__",
   "profile": "__SADL_PROFILE__",
@@ -33,7 +33,6 @@
     "PENDING_HUMAN_REVIEW",
     "ACCEPTED",
     "REJECTED",
-    "DONE",
     "BLOCKED",
     "FAILED_TESTS",
     "NEEDS_REVIEW",

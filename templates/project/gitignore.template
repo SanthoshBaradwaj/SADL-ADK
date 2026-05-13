@@ -15,6 +15,14 @@ coverage/
 *.p12
 *.pfx
 secrets.*
+.sadlignore-secrets
+
+# SADL local state (never commit)
+.sadl/runtime.json
+.sadl/approvals.json
+.sadl/telemetry.json
+.sadl/cache/
+.sadl/locks/
 
 # OS and editor noise
 .DS_Store
@@ -23,4 +31,3 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.example.json
-
