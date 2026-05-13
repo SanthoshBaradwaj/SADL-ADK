@@ -87,19 +87,21 @@ sadl checkpoint . \
 ## Commit
 
 ```bash
-sadl commit . --message "sadl: complete login form"
+sadl commit . --paths src/login.js,tests/login.test.js --message "sadl: complete login form"
 ```
 
-The commit command refuses to commit if SADL validation has hard failures.
+The commit command refuses to commit if SADL validation has hard failures. In non-interactive/agent usage, `--paths` is required so the agent declares its commit blast radius.
 
 ## Validation Runner
 
 Run configured commands from `.sadl/config.json`:
 
 ```bash
-npx --package create-sadl-project sadl run . --category test
-npx --package create-sadl-project sadl validate . --run
+npx --package create-sadl-project sadl run . --category test --yes
+npx --package create-sadl-project sadl validate . --run --yes
 ```
+
+Without `--yes` or a matching local approval, SADL pauses or fails closed before executing configured commands. Use `--trust-command` only after reviewing the command and project scripts.
 
 ## CI, Dashboard, And Adapters
 

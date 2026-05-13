@@ -168,8 +168,8 @@ Usage:
   sadl plan [path] [--write]
   sadl start [path]
   sadl status [path]
-  sadl validate [path] [--strict] [--json] [--run]
-  sadl run [path] [--category lint|test|typecheck|build]
+  sadl validate [path] [--strict] [--json] [--run] [--yes|--trust-command] [--unsafe-shell]
+  sadl run [path] [--category lint|test|typecheck|build] [--yes|--trust-command] [--unsafe-shell]
   sadl manifest [path]
   sadl checkpoint [path] --task "Task 1.1" --status WIP|DONE|BLOCKED
   sadl dream [path]
@@ -179,13 +179,13 @@ Usage:
   sadl ci [path]
   sadl policy [path] --list | --apply solo|startup-saas|enterprise|open-source|monorepo
   sadl adapter [path] --tool codex|claude-code|cursor|gemini|github-copilot|generic-cli
-  sadl commit [path] --message "sadl: complete task"
+  sadl commit [path] --paths src/file.ts,tests/file.test.ts --message "sadl: complete task"
 
 Examples:
   sadl init my-app
   sadl validate my-app --strict
   sadl intake my-app --write
-  sadl run my-app --category test
+  sadl run my-app --category test --yes
   sadl checkpoint . --task "1.1 Bootstrap app" --status DONE --next "Start task 1.2"
 `);
 }
@@ -380,6 +380,7 @@ function commandWorktree(args, options) {
 
 function commandCi(args) {
   const projectDir = path.resolve(args[0] || ".");
+  const packageSpec = `create-sadl-project@${SADL_VERSION}`;
   const workflow = `name: SADL Validate
 
 on:
@@ -396,7 +397,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npx --package create-sadl-project@latest sadl validate . --strict
+      - run: npx --package ${packageSpec} sadl validate . --strict
 `;
   writeFile(path.join(projectDir, ".github/workflows/sadl-validate.yml"), workflow);
   console.log("GitHub Action written to .github/workflows/sadl-validate.yml");
@@ -471,13 +472,33 @@ function commandStatus(args, options) {
   console.log(`Validation: ${status.validation.failures.length} failures, ${status.validation.warnings.length} warnings`);
 }
 
-function commandValidate(args, options) {
+async function commandValidate(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   const result = collectValidation(projectDir, {
     strict: Boolean(options.strict),
-    run: Boolean(options.run),
     category: options.category
   });
+
+  const config = readConfig(projectDir, []);
+  if (options.run && config) {
+    const runResult = await executeValidationCommands(projectDir, config, {
+      category: options.category,
+      quiet: true,
+      yes: Boolean(options.yes),
+      trustCommand: Boolean(options.trustCommand),
+      unsafeShell: Boolean(options.unsafeShell)
+    });
+    result.checks.validationCommandsPassed = runResult.ok;
+    result.commandResults = runResult.results;
+    for (const item of runResult.results) {
+      if (item.status !== 0) {
+        result.failures.push(item.approvalRequired
+          ? `Command approval required (${item.category}): ${item.command}`
+          : `Validation command failed (${item.category}): ${item.command}`);
+      }
+    }
+    result.ok = result.failures.length === 0;
+  }
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
@@ -490,7 +511,7 @@ function commandValidate(args, options) {
   }
 }
 
-function commandRun(args, options) {
+async function commandRun(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   const failures = [];
   const config = readConfig(projectDir, failures);
@@ -498,12 +519,16 @@ function commandRun(args, options) {
     throw new Error(failures[0] || "missing SADL config. Run sadl migrate.");
   }
 
-  const result = executeValidationCommands(projectDir, config, {
-    category: options.category
+  const result = await executeValidationCommands(projectDir, config, {
+    category: options.category,
+    yes: Boolean(options.yes),
+    trustCommand: Boolean(options.trustCommand),
+    unsafeShell: Boolean(options.unsafeShell)
   });
 
   for (const item of result.results) {
     console.log(`\n[${item.category}] ${item.command}`);
+    if (item.approvalRequired) console.log(item.stderr || "Command approval required.");
     if (item.stdout) console.log(item.stdout.trim());
     if (item.stderr) console.error(item.stderr.trim());
     console.log(`exit=${item.status}${item.timedOut ? " timed-out" : ""}`);
@@ -573,19 +598,6 @@ function collectValidation(projectDir, options) {
     const prd = readTextIfExists(path.join(projectDir, "docs/01_PRD.md"));
     if (prd && prd.includes("[USER ACTION REQUIRED]")) {
       failures.push("PRD still contains [USER ACTION REQUIRED] placeholders.");
-    }
-  }
-
-  if (options.run && config) {
-    const runResult = executeValidationCommands(projectDir, config, {
-      category: options.category,
-      quiet: true
-    });
-    checks.validationCommandsPassed = runResult.ok;
-    for (const result of runResult.results) {
-      if (result.status !== 0) {
-        failures.push(`Validation command failed (${result.category}): ${result.command}`);
-      }
     }
   }
 
@@ -748,7 +760,7 @@ ${buildDreamSuggestions(repeatedCommands, repeatedBlockers, failedTasks, { appro
   console.log(`Dream report written: ${outPath}`);
 }
 
-function commandCommit(args, options) {
+async function commandCommit(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   const validation = collectValidation(projectDir, { strict: Boolean(options.strict) });
   if (validation.failures.length > 0) {
@@ -761,10 +773,120 @@ function commandCommit(args, options) {
     throw new Error("cannot commit because this is not a Git repository.");
   }
 
+  const paths = await resolveCommitPaths(projectDir, args.slice(1), options, git);
+  validateCommitPaths(projectDir, paths, options);
+
   const message = String(options.message || "sadl: checkpoint session");
-  runGit(projectDir, ["add", "-A"]);
+  runGit(projectDir, ["add", "--", ...paths]);
   const commit = runGit(projectDir, ["commit", "-m", message]);
   console.log(commit.stdout.trim() || "Commit complete.");
+}
+
+async function resolveCommitPaths(projectDir, positionalPaths, options, git) {
+  const explicitPaths = [
+    ...splitPathOption(options.paths),
+    ...positionalPaths
+  ].map((item) => normalizePath(item)).filter(Boolean);
+
+  if (explicitPaths.length > 0) return Array.from(new Set(explicitPaths));
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("sadl commit requires explicit --paths in non-interactive/agent use. Example: sadl commit . --paths src/app.ts,tests/app.test.ts --message \"sadl: complete task\"");
+  }
+
+  if (!git.changedFiles.length) {
+    throw new Error("no changed files to commit.");
+  }
+
+  console.log("Changed files:");
+  git.changedFiles.forEach((file, index) => {
+    console.log(`${index + 1}. ${file}`);
+  });
+  const rl = readline.createInterface({ input, output });
+  try {
+    const answer = (await rl.question("Select files to stage, e.g. 1,3-5 or all\n> ")).trim();
+    return parseFileSelection(answer, git.changedFiles);
+  } finally {
+    rl.close();
+  }
+}
+
+function validateCommitPaths(projectDir, paths, options) {
+  if (!paths.length) throw new Error("no commit paths selected.");
+  for (const relPath of paths) {
+    if (isForbiddenCommitPath(relPath)) {
+      throw new Error(`refusing to commit local-only or secret-like path: ${relPath}`);
+    }
+  }
+
+  const taskId = String(options.taskId || readRuntimeActiveTask(projectDir) || inferTaskId(readActiveTask(projectDir)) || "");
+  const allowedPaths = taskId ? getTaskAllowedPaths(projectDir, taskId) : [];
+  if (allowedPaths.length === 0) return;
+
+  const outsideScope = paths.filter((relPath) => !allowedPaths.some((pattern) => pathMatchesPattern(relPath, pattern)));
+  if (outsideScope.length > 0) {
+    throw new Error(`commit path outside active task allowed_paths for ${taskId}: ${outsideScope.join(", ")}`);
+  }
+}
+
+function splitPathOption(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(splitPathOption);
+  return String(value).split(/[,\n;]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function parseFileSelection(answer, changedFiles) {
+  if (answer.toLowerCase() === "all") return changedFiles;
+  const selected = new Set();
+  for (const part of answer.split(",")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const range = trimmed.match(/^(\d+)-(\d+)$/);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      for (let index = start; index <= end; index += 1) {
+        if (changedFiles[index - 1]) selected.add(changedFiles[index - 1]);
+      }
+      continue;
+    }
+    const number = Number(trimmed);
+    if (Number.isInteger(number) && changedFiles[number - 1]) {
+      selected.add(changedFiles[number - 1]);
+    }
+  }
+  return Array.from(selected);
+}
+
+function isForbiddenCommitPath(relPath) {
+  const normalized = normalizePath(relPath);
+  if (path.isAbsolute(relPath) || normalized === ".." || normalized.startsWith("../") || normalized.includes("/../")) return true;
+  if (LOCAL_SADL_FILES.includes(normalized)) return true;
+  if (normalized.startsWith(".sadl/cache/") || normalized.startsWith(".sadl/locks/")) return true;
+  if (normalized === ".sadlignore-secrets") return true;
+  if (normalized === ".env.example" || normalized.endsWith("/.env.example")) return false;
+  return SECRET_FILE_PATTERNS.some((pattern) => pattern.test(path.basename(normalized)) || pattern.test(normalized));
+}
+
+function getTaskAllowedPaths(projectDir, taskId) {
+  const traceability = readJson(path.join(projectDir, ".sadl/traceability.json"));
+  const task = traceability?.tasks?.[taskId];
+  return Array.isArray(task?.allowedPaths) ? task.allowedPaths : [];
+}
+
+function pathMatchesPattern(relPath, pattern) {
+  const normalizedPath = normalizePath(relPath);
+  const normalizedPattern = normalizePath(pattern).replace(/^\.\//, "");
+  if (normalizedPattern.endsWith("/**")) {
+    const prefix = normalizedPattern.slice(0, -3);
+    return normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`);
+  }
+  if (normalizedPattern.endsWith("/*")) {
+    const prefix = normalizedPattern.slice(0, -2);
+    const rest = normalizedPath.slice(prefix.length + 1);
+    return normalizedPath.startsWith(`${prefix}/`) && !rest.includes("/");
+  }
+  return normalizedPath === normalizedPattern || normalizedPath.startsWith(`${normalizedPattern}/`);
 }
 
 function readConfig(projectDir, failures) {
@@ -1017,19 +1139,50 @@ function updateConfigFromIntake(projectDir, intake) {
   syncLegacyConfigIfPresent(projectDir, config);
 }
 
-function executeValidationCommands(projectDir, config, options = {}) {
+async function executeValidationCommands(projectDir, config, options = {}) {
   const validation = config.validation || {};
   const categories = options.category ? [String(options.category)] : ["lint", "typecheck", "test", "build"];
   const timeout = Number(config.validationTimeoutMs || 120000);
   const results = [];
+  const taskId = options.taskId || readRuntimeActiveTask(projectDir) || inferTaskId(readActiveTask(projectDir));
 
   for (const category of categories) {
     const commands = validation[category] || [];
     for (const command of commands) {
       if (!command) continue;
-      const result = spawnSync(command, {
+      const approval = await ensureCommandApproved(projectDir, config, command, {
+        ...options,
+        taskId
+      });
+      if (!approval.ok) {
+        results.push({
+          category,
+          command,
+          status: 1,
+          timedOut: false,
+          stdout: "",
+          stderr: approval.message,
+          approvalRequired: true
+        });
+        continue;
+      }
+      let execution;
+      try {
+        execution = buildCommandExecution(command, options);
+      } catch (error) {
+        results.push({
+          category,
+          command,
+          status: 1,
+          timedOut: false,
+          stdout: "",
+          stderr: error.message
+        });
+        continue;
+      }
+      const result = spawnSync(execution.file, execution.args, {
         cwd: projectDir,
-        shell: true,
+        shell: execution.shell,
         encoding: "utf8",
         timeout
       });
@@ -1048,6 +1201,176 @@ function executeValidationCommands(projectDir, config, options = {}) {
     ok: results.every((result) => result.status === 0),
     results
   };
+}
+
+async function ensureCommandApproved(projectDir, config, command, options = {}) {
+  const requiresApproval = config?.security?.requireCommandApproval !== false;
+  if (!requiresApproval) return { ok: true, fingerprint: null };
+
+  const fingerprint = buildCommandFingerprint(projectDir, config, command, options);
+  const approvals = readApprovals(projectDir);
+  const trusted = (approvals.trustedCommands || []).some((entry) => {
+    if (entry.fingerprint !== fingerprint) return false;
+    if (!entry.expiresAt) return true;
+    return new Date(entry.expiresAt).getTime() > Date.now();
+  });
+  if (trusted || options.yes) return { ok: true, fingerprint };
+
+  if (options.trustCommand) {
+    approvals.trustedCommands = approvals.trustedCommands || [];
+    approvals.trustedCommands.push({
+      fingerprint,
+      command,
+      taskId: options.taskId || null,
+      approvedAt: new Date().toISOString(),
+      expiresAt: null
+    });
+    writeApprovals(projectDir, approvals);
+    return { ok: true, fingerprint };
+  }
+
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    const approved = await promptYesNo(`SADL is about to run "${command}". Approve once?`, false);
+    if (approved) return { ok: true, fingerprint };
+  }
+
+  return {
+    ok: false,
+    fingerprint,
+    message: `Command approval required for "${command}". Re-run with --yes for CI/one-shot execution or --trust-command to store a local approval.`
+  };
+}
+
+function buildCommandFingerprint(projectDir, config, command, options = {}) {
+  const payload = {
+    command,
+    cwd: normalizePath(projectDir),
+    taskId: options.taskId || null,
+    sadlVersion: SADL_VERSION,
+    configHash: hashText(JSON.stringify(config || {})),
+    packageScriptsHash: hashPackageScripts(projectDir),
+    lockfileHash: hashLockfiles(projectDir),
+    envKeyNamesHash: hashText(Object.keys(process.env).sort().join("\n"))
+  };
+  return hashText(JSON.stringify(payload));
+}
+
+function readApprovals(projectDir) {
+  const filePath = path.join(projectDir, ".sadl/approvals.json");
+  const approvals = readJson(filePath);
+  if (approvals) return approvals;
+  return {
+    schemaVersion: "1.0",
+    sadlVersion: SADL_VERSION,
+    trustedCommands: [],
+    secretOverrides: []
+  };
+}
+
+function writeApprovals(projectDir, approvals) {
+  approvals.schemaVersion = approvals.schemaVersion || "1.0";
+  approvals.sadlVersion = approvals.sadlVersion || SADL_VERSION;
+  approvals.trustedCommands = approvals.trustedCommands || [];
+  approvals.secretOverrides = approvals.secretOverrides || [];
+  writeFile(path.join(projectDir, ".sadl/approvals.json"), `${JSON.stringify(approvals, null, 2)}\n`);
+}
+
+async function promptYesNo(question, defaultValue) {
+  const rl = readline.createInterface({ input, output });
+  try {
+    const suffix = defaultValue ? "[Y/n]" : "[y/N]";
+    const answer = (await rl.question(`${question} ${suffix}\n> `)).trim().toLowerCase();
+    if (!answer) return defaultValue;
+    return ["y", "yes"].includes(answer);
+  } finally {
+    rl.close();
+  }
+}
+
+function buildCommandExecution(command, options = {}) {
+  if (containsShellSyntax(command)) {
+    if (!options.unsafeShell) {
+      throw new Error(`Command contains shell syntax and is blocked by default: ${command}. Re-run with --unsafe-shell only if you trust it.`);
+    }
+    return { file: command, args: [], shell: true };
+  }
+  const parts = splitCommand(command);
+  if (parts.length === 0) throw new Error("Empty command.");
+  return {
+    file: resolveExecutable(parts[0]),
+    args: parts.slice(1),
+    shell: false
+  };
+}
+
+function containsShellSyntax(command) {
+  return /(\|\||&&|[|;<>]|`|\$\()/.test(command);
+}
+
+function splitCommand(command) {
+  const parts = [];
+  let current = "";
+  let quote = null;
+  let escaped = false;
+
+  for (const char of String(command)) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+function resolveExecutable(executable) {
+  if (process.platform !== "win32") return executable;
+  if (executable === "npm" || executable === "npx" || executable === "pnpm" || executable === "yarn") {
+    return `${executable}.cmd`;
+  }
+  return executable;
+}
+
+function hashPackageScripts(projectDir) {
+  const packageJson = readJson(path.join(projectDir, "package.json"));
+  return hashText(JSON.stringify(packageJson?.scripts || {}));
+}
+
+function hashLockfiles(projectDir) {
+  const lockfiles = ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"];
+  const parts = [];
+  for (const file of lockfiles) {
+    const filePath = path.join(projectDir, file);
+    if (fs.existsSync(filePath)) {
+      parts.push(`${file}:${hashFile(filePath)}`);
+    }
+  }
+  return hashText(parts.join("\n"));
 }
 
 function checkSessionLogs(projectDir, warnings, failures) {
@@ -1380,6 +1703,16 @@ function readActiveTask(projectDir) {
   return todo ? `TODO ${todo[1].trim()}` : null;
 }
 
+function readRuntimeActiveTask(projectDir) {
+  const runtime = readJson(path.join(projectDir, ".sadl/runtime.json"));
+  return runtime?.activeSession?.activeTask || null;
+}
+
+function inferTaskId(value) {
+  const match = String(value || "").match(/\bTASK-[0-9]+\b/i);
+  return match ? match[0].toUpperCase() : null;
+}
+
 function readStateSummary(projectDir) {
   const state = readTextIfExists(path.join(projectDir, "docs/03_STATE.md"));
   const status = state.match(/Task Status:\s*(.+)/i);
@@ -1632,6 +1965,12 @@ function shouldSkipFile(relPath) {
 function hashFile(filePath) {
   const hash = crypto.createHash("sha256");
   hash.update(fs.readFileSync(filePath));
+  return hash.digest("hex");
+}
+
+function hashText(value) {
+  const hash = crypto.createHash("sha256");
+  hash.update(String(value));
   return hash.digest("hex");
 }
 

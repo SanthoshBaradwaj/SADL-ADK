@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added security hardening for configured command execution: command approval gates, local command fingerprints, `--yes`, `--trust-command`, and `--unsafe-shell`.
+- Replaced broad `sadl commit` staging with explicit path-based commits for non-interactive use.
+- Added an npm package `files` whitelist, pinned generated CI to the current package version, and documented trust boundaries in `SECURITY.md`.
 - Added the new `.sadl/` state foundation with committed config/traceability files and local-only runtime, approvals, and telemetry files.
 - Added `sadl migrate` for older projects and expanded doctor/validation checks for the new machine-readable state.
 - Added JSON schemas for config, traceability, runtime, approvals, and telemetry state.

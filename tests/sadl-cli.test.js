@@ -170,11 +170,20 @@ try {
   assert.match(roadmap, /NEEDS_REVIEW/, "plan should add approval gate");
 
   result = run(["run", project, "--category", "test"]);
+  assert.notStrictEqual(result.status, 0, "validation runner should require approval by default");
+  assert.match(`${result.stdout}\n${result.stderr}`, /Command approval required/, "run should explain approval gate");
+
+  result = run(["run", project, "--category", "test", "--yes"]);
   assertOk(result, "validation runner");
 
   result = run(["ci", project]);
   assertOk(result, "ci template");
   assert(fs.existsSync(path.join(project, ".github", "workflows", "sadl-validate.yml")), "CI workflow should exist");
+  assert.doesNotMatch(
+    fs.readFileSync(path.join(project, ".github", "workflows", "sadl-validate.yml"), "utf8"),
+    /@latest/,
+    "CI workflow should pin SADL package version"
+  );
 
   result = run(["adapter", project, "--tool", "claude-code"]);
   assertOk(result, "adapter generation");

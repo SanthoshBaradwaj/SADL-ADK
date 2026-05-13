@@ -25,6 +25,7 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - Machine-readable team state in `.sadl/config.json` and `.sadl/traceability.json`.
 - Local-only runtime, approval, and telemetry state.
 - Secret-safe defaults.
+- Security gates for configured command execution and path-aware commits.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
@@ -148,7 +149,7 @@ sadl plan                 # Generate a first roadmap from the PRD
 sadl start [path]         # Show agent bootstrap instructions
 sadl status [path]        # Show active task, state, git, validation summary
 sadl validate [path]      # Check required files, state, secrets, manifest
-sadl run [path]           # Run configured lint/test/typecheck/build commands
+sadl run [path] --yes     # Run approved lint/test/typecheck/build commands
 sadl manifest [path]      # Generate file hash manifest
 sadl checkpoint [path]    # Update state and append session logs
 sadl dream [path]         # Analyze session logs and propose improvements
@@ -158,7 +159,7 @@ sadl worktree [path]      # Create a task worktree
 sadl ci [path]            # Add a GitHub Action for SADL validation
 sadl policy [path]        # List/apply policy packs
 sadl adapter [path]       # Generate tool-specific adapter instructions
-sadl commit [path]        # Validate, git add, and git commit
+sadl commit [path] --paths src/file.ts # Validate, stage explicit paths, and commit
 ```
 
 ## How To Use SADL For A New App
@@ -227,6 +228,17 @@ WIP_CHECKPOINTED
 BLOCKED_WITH_STATE
 WAITING_FOR_APPROVAL
 ```
+
+## Security Model
+
+SADL fails closed around risky local actions:
+
+- `sadl run` and `sadl validate --run` require command approval, `--yes`, or a matching local command fingerprint.
+- `sadl commit` requires explicit `--paths` for non-interactive/agent use instead of staging the whole repo.
+- `.sadl/runtime.json`, `.sadl/approvals.json`, and `.sadl/telemetry.json` are local-only and gitignored.
+- Generated GitHub Actions pin the SADL package version instead of using mutable `latest`.
+
+See [SECURITY.md](SECURITY.md) for the full trust boundary.
 
 ## PRD Input Modes
 
@@ -407,10 +419,10 @@ sadl checkpoint . \
 ## Commit Example
 
 ```bash
-sadl commit . --message "sadl: complete auth UI shell"
+sadl commit . --paths src/auth-ui.js,tests/auth-ui.test.js --message "sadl: complete auth UI shell"
 ```
 
-The commit command runs SADL validation first and refuses to commit when hard failures are present.
+The commit command runs SADL validation first and refuses to commit when hard failures are present. Non-interactive agents must provide `--paths`; SADL no longer stages the whole repo with `git add -A`.
 
 ## Prototype-Friendly Flow
 
@@ -556,7 +568,7 @@ Initialize and commit:
 
 ```bash
 git init
-git add -A
+git add AGENTS.md .sadl docs src tests .env.example .gitignore
 git commit -m "Initial SADL Kit MVP"
 ```
 

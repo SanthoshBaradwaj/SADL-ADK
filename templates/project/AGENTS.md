@@ -46,11 +46,18 @@ Default writable areas:
 - Keep changes scoped to the active task.
 - Split tasks that cannot fit into one session.
 - Do not run open-ended interactive commands.
+- Do not bypass SADL command approval gates. Use `--yes` only when the human or CI policy explicitly approved that run.
 - Do not repeat the same failed command more than the configured tool budget.
 - If blocked, record the blocker in `docs/03_STATE.md` and stop.
 - If waiting for human approval, enter `WAITING_FOR_APPROVAL` and stop.
 
 ## Commit Discipline
+Agents must use explicit commit paths:
+
+```bash
+sadl commit . --paths src/file.ts,tests/file.test.ts --message "sadl: complete TASK-ID"
+```
+
 Each session must end in one of these outcomes:
 - `DONE_COMMITTED`: validation passed and relevant files were committed.
 - `WIP_CHECKPOINTED`: work is incomplete but repo is left in a safe state.

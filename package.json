@@ -19,6 +19,21 @@
     "handoff",
     "cli"
   ],
+  "files": [
+    "adapters/",
+    "bin/",
+    "docs/",
+    "examples/",
+    "mcp/",
+    "policy-packs/",
+    "schemas/",
+    "src/",
+    "templates/",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
