@@ -164,6 +164,25 @@ try {
   const prd = fs.readFileSync(path.join(project, "docs", "01_PRD.md"), "utf8");
   assert.match(prd, /task tracker/, "intake should write PRD content");
 
+  result = run(["prd-check", project]);
+  assertOk(result, "prd check");
+
+  result = run(["prd-check", project, "--fix-propose"]);
+  assertOk(result, "prd check proposal");
+  let traceability = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "traceability.json"), "utf8"));
+  assert(traceability.sources.prd.hash, "prd-check should sync-lock PRD hash");
+  assert(Object.keys(traceability.requirements).length > 0, "prd-check should propose requirement IDs");
+
+  fs.appendFileSync(path.join(project, "docs", "01_PRD.md"), "\n\n## Change Note\nThis change should desync traceability until reviewed.\n", "utf8");
+  result = run(["validate", project]);
+  assert.notStrictEqual(result.status, 0, "validate should fail on PRD/traceability desync");
+  assert.match(result.stdout, /PRD\/traceability desync/, "validate should report PRD desync");
+
+  result = run(["prd-check", project, "--fix-propose"]);
+  assertOk(result, "prd check resync");
+  traceability = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "traceability.json"), "utf8"));
+  assert.strictEqual(traceability.sources.prd.hash.length, 64, "resync should store a SHA-256 PRD hash");
+
   result = run(["plan", project, "--write"]);
   assertOk(result, "plan write");
   const roadmap = fs.readFileSync(path.join(project, "docs", "02_ROADMAP.md"), "utf8");

@@ -19,6 +19,7 @@ docs/04_ARCH_SPEC.md
 Validate:
 
 ```bash
+npx --package create-sadl-project@latest sadl prd-check . --fix-propose
 npx --package create-sadl-project@latest sadl validate . --strict
 ```
 
@@ -45,6 +46,17 @@ npx --package create-sadl-project@latest sadl validate .
 ```
 
 Then fill the missing PRD and architecture sections. Do not start code work until `sadl validate --strict` passes or every failure is intentionally accepted by a human.
+
+## PRD Sufficiency
+
+```bash
+npx --package create-sadl-project sadl prd-check .
+npx --package create-sadl-project sadl prd-check . --fix-propose
+```
+
+`prd-check` acts like a linter for human requirements. It checks required PRD concepts, catches empty scope firewalls, warns on vague words like `fast` or `secure` without measurement, and writes requirement proposals to `.sadl/traceability.json` without mutating `docs/01_PRD.md`.
+
+After `--fix-propose`, the PRD hash is sync-locked into traceability. Editing the PRD later causes `sadl validate` to fail until the change is reviewed and re-synced.
 
 ## Migrating Older SADL Projects
 

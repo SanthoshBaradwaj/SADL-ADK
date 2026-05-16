@@ -7,6 +7,7 @@ This audit records the current implementation boundary for `0.2.0-next.0`.
 - `sadl init`: creates the SADL project skeleton.
 - `create-sadl-project`: delegates to `sadl init`.
 - `sadl validate`: checks required files, config shape, secret safety, state, roadmap, manifest, protected-file changes, and session log schemas.
+- `sadl prd-check`: checks PRD sufficiency, vague wording, scope firewall, requirement candidates, and PRD/traceability sync proposals.
 - `sadl intake --from-json`: writes PRD, architecture spec, `.env.example`, setup docs, and config validation commands from structured input.
 - `sadl intake --write`: interactive wizard for the same generated files.
 - `sadl plan --write`: creates a first roadmap with a human approval gate.

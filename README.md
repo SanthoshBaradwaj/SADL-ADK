@@ -26,6 +26,7 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - Local-only runtime, approval, and telemetry state.
 - Secret-safe defaults.
 - Security gates for configured command execution and path-aware commits.
+- PRD sufficiency checks and PRD/traceability sync-locking.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
@@ -145,6 +146,7 @@ npx --package create-sadl-project sadl validate .
 sadl init [path]          # Create SADL files in a new project
 sadl adopt [path]         # Add SADL files to an existing project
 sadl intake               # Print or run structured intake
+sadl prd-check [path]     # Check PRD sufficiency and propose requirement IDs
 sadl plan                 # Generate a first roadmap from the PRD
 sadl start [path]         # Show agent bootstrap instructions
 sadl status [path]        # Show active task, state, git, validation summary
@@ -190,6 +192,7 @@ docs/setup-env.md
 3. Validate readiness:
 
 ```bash
+sadl prd-check . --fix-propose
 sadl validate . --strict
 ```
 
@@ -289,6 +292,17 @@ npx --package create-sadl-project sadl plan . --write
 ```
 
 The PRD defines intent. The architecture spec defines technical boundaries. The roadmap turns both into small tasks.
+
+## PRD Sufficiency And Sync Lock
+
+Run this before planning or after any PRD edit:
+
+```bash
+sadl prd-check .
+sadl prd-check . --fix-propose
+```
+
+`prd-check` verifies concept coverage, flags unresolved placeholders, warns on vague words without measurable acceptance criteria, and can propose requirement IDs into `.sadl/traceability.json` without rewriting `docs/01_PRD.md`. Once proposed, SADL stores the PRD hash in the traceability ledger. If the PRD changes later, `sadl validate` reports a PRD/traceability desync until the human reviews and re-runs `sadl prd-check --fix-propose`.
 
 ## AI Workflow Configuration
 

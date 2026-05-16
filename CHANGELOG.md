@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added `sadl prd-check` for PRD sufficiency scoring, vague-word warnings, requirement ID proposals, and PRD/traceability sync-locking.
+- Added validation failure when an already sync-locked PRD changes without refreshing `.sadl/traceability.json`.
 - Added security hardening for configured command execution: command approval gates, local command fingerprints, `--yes`, `--trust-command`, and `--unsafe-shell`.
 - Replaced broad `sadl commit` staging with explicit path-based commits for non-interactive use.
 - Added an npm package `files` whitelist, pinned generated CI to the current package version, and documented trust boundaries in `SECURITY.md`.

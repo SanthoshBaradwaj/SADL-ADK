@@ -67,6 +67,67 @@ const SECRET_TEXT_PATTERNS = [
   /\b(sk-[A-Za-z0-9]{20,})\b/
 ];
 
+const PRD_CONCEPTS = [
+  {
+    key: "overview",
+    label: "Overview / Product Intent",
+    patterns: [/overview/i, /product intent/i, /who.*what.*why/i]
+  },
+  {
+    key: "goals",
+    label: "Goals And Non-Goals",
+    patterns: [/goals/i, /non-?goals/i, /mvp scope/i]
+  },
+  {
+    key: "userStories",
+    label: "User Stories / Workflows",
+    patterns: [/user stories/i, /target users/i, /roles/i, /core workflows/i, /persona/i]
+  },
+  {
+    key: "functionalRequirements",
+    label: "Functional Requirements / Acceptance Criteria",
+    patterns: [/functional requirements/i, /acceptance criteria/i, /observable outcomes/i]
+  },
+  {
+    key: "techStack",
+    label: "Tech Stack / Architecture Guardrails",
+    patterns: [/tech stack/i, /technical choices/i, /architecture/i, /operational requirements/i]
+  },
+  {
+    key: "apiData",
+    label: "API / Data",
+    patterns: [/api/i, /data/i, /database/i, /schema/i, /privacy/i]
+  },
+  {
+    key: "uiUx",
+    label: "UI / UX Notes",
+    patterns: [/ui/i, /ux/i, /layout/i, /accessibility/i, /canvas/i]
+  },
+  {
+    key: "ciCd",
+    label: "CI/CD Gates",
+    patterns: [/ci\/cd/i, /validation/i, /test expectations/i, /lint/i, /coverage/i]
+  },
+  {
+    key: "scopeFirewall",
+    label: "Out Of Scope / Scope Firewall",
+    patterns: [/out of scope/i, /non-?goals/i, /must avoid/i]
+  }
+];
+
+const VAGUE_REQUIREMENT_WORDS = [
+  "fast",
+  "scalable",
+  "secure",
+  "simple",
+  "robust",
+  "user-friendly",
+  "reliable",
+  "performant"
+];
+
+const MEASUREMENT_HINT_PATTERN = /(\d|<|>|<=|>=|%|ms\b|sec(ond)?s?\b|min(ute)?s?\b|p95|p99|sla|rps|requests?|users?|coverage|wcag|kb\b|mb\b|gb\b)/i;
+
 function main(argv) {
   const { command, args, options } = parseArgs(argv);
 
@@ -88,6 +149,9 @@ function main(argv) {
       return Promise.resolve(commandInit(args, options, { adopt: true }));
     case "migrate":
       return Promise.resolve(commandMigrate(args, options));
+    case "prd-check":
+    case "prdcheck":
+      return Promise.resolve(commandPrdCheck(args, options));
     case "status":
       return Promise.resolve(commandStatus(args, options));
     case "validate":
@@ -164,6 +228,7 @@ Usage:
   sadl init [path] [--profile lite|standard|enterprise] [--force]
   sadl adopt [path] [--profile lite|standard|enterprise]
   sadl migrate [path]
+  sadl prd-check [path] [--json] [--fix-propose]
   sadl intake [path] [--write] [--from-json intake.json]
   sadl plan [path] [--write]
   sadl start [path]
@@ -257,6 +322,156 @@ function commandMigrate(args, options) {
   }
 }
 
+function commandPrdCheck(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  ensureProject(projectDir);
+  const report = buildPrdCheckReport(projectDir);
+
+  if (options.fixPropose) {
+    const proposal = writeRequirementProposals(projectDir, report);
+    report.proposal = proposal;
+    commandManifest([projectDir], { quiet: true });
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    printPrdCheckReport(report);
+  }
+
+  if (!report.ok) {
+    process.exitCode = 1;
+  }
+}
+
+function buildPrdCheckReport(projectDir) {
+  const prdPath = path.join(projectDir, "docs/01_PRD.md");
+  const archPath = path.join(projectDir, "docs/04_ARCH_SPEC.md");
+  const prd = readTextIfExists(prdPath);
+  const arch = readTextIfExists(archPath);
+  const combined = `${prd}\n\n${arch}`;
+  const headings = parseMarkdownSections(combined);
+  const conceptResults = PRD_CONCEPTS.map((concept) => {
+    const matched = headings.some((heading) => concept.patterns.some((pattern) => pattern.test(heading.title))) ||
+      concept.patterns.some((pattern) => pattern.test(combined));
+    return {
+      key: concept.key,
+      label: concept.label,
+      present: matched
+    };
+  });
+
+  const failures = [];
+  const warnings = [];
+  const missing = conceptResults.filter((item) => !item.present);
+  for (const item of missing) {
+    failures.push(`Missing PRD concept: ${item.label}`);
+  }
+
+  const scopeSection = findSection(headings, [/out of scope/i, /non-?goals/i]);
+  if (!scopeSection || sectionHasPlaceholderOnly(scopeSection.body)) {
+    failures.push("Scope firewall is empty. Add explicit non-goals or out-of-scope items.");
+  }
+
+  const acceptanceSection = findSection(headings, [/acceptance criteria/i, /functional requirements/i]);
+  if (!acceptanceSection || sectionHasPlaceholderOnly(acceptanceSection.body)) {
+    failures.push("Acceptance criteria are missing or still placeholders.");
+  }
+
+  const vagueFindings = findVagueRequirementLines(prd);
+  for (const finding of vagueFindings) {
+    warnings.push(`Vague requirement word "${finding.word}" needs a measurable criterion near line ${finding.line}.`);
+  }
+
+  if (prd.includes("[USER ACTION REQUIRED]")) {
+    failures.push("PRD still contains [USER ACTION REQUIRED] placeholders.");
+  }
+
+  const extractedRequirements = extractRequirementCandidates(prd);
+  if (extractedRequirements.length === 0) {
+    warnings.push("No requirement candidates found. Add bullets or numbered acceptance criteria.");
+  }
+
+  const score = Math.max(0, Math.round(100 - (failures.length * 12) - (warnings.length * 4)));
+  return {
+    ok: failures.length === 0,
+    project: projectDir,
+    prdHash: hashText(prd),
+    score,
+    concepts: conceptResults,
+    requirementCandidates: extractedRequirements,
+    vagueFindings,
+    failures,
+    warnings
+  };
+}
+
+function printPrdCheckReport(report) {
+  console.log(`SADL PRD check for ${report.project}`);
+  console.log(report.ok ? `OK (${report.score}/100)` : `FAILED (${report.score}/100)`);
+
+  console.log("\nConcept coverage:");
+  for (const item of report.concepts) {
+    console.log(`- ${item.present ? "OK" : "MISSING"}: ${item.label}`);
+  }
+
+  if (report.failures.length > 0) {
+    console.log("\nHard failures:");
+    for (const failure of report.failures) console.log(`- ${failure}`);
+  }
+
+  if (report.warnings.length > 0) {
+    console.log("\nWarnings:");
+    for (const warning of report.warnings) console.log(`- ${warning}`);
+  }
+
+  if (report.proposal) {
+    console.log("\nRequirement proposal:");
+    console.log(`- Proposed requirements: ${report.proposal.requirementsAdded}`);
+    console.log(`- Traceability updated: ${report.proposal.traceabilityPath}`);
+  }
+}
+
+function writeRequirementProposals(projectDir, report) {
+  const traceabilityPath = path.join(projectDir, ".sadl/traceability.json");
+  const traceability = readJson(traceabilityPath) || templateJson(".sadl/traceability.json", "standard");
+  traceability.schemaVersion = traceability.schemaVersion || "1.0";
+  traceability.sadlVersion = SADL_VERSION;
+  traceability.sources = traceability.sources || {};
+  traceability.sources.prd = {
+    path: "docs/01_PRD.md",
+    hash: report.prdHash,
+    updatedAt: new Date().toISOString()
+  };
+  traceability.requirements = traceability.requirements || {};
+
+  let nextNumber = nextRequirementNumber(traceability.requirements);
+  let requirementsAdded = 0;
+  const existingTitles = new Set(Object.values(traceability.requirements).map((item) => normalizeRequirementTitle(item.title)));
+
+  for (const candidate of report.requirementCandidates) {
+    const titleKey = normalizeRequirementTitle(candidate.title);
+    if (!titleKey || existingTitles.has(titleKey)) continue;
+    const id = `FR-${String(nextNumber).padStart(3, "0")}`;
+    traceability.requirements[id] = {
+      title: candidate.title,
+      status: "TODO",
+      source: `docs/01_PRD.md:${candidate.line}`,
+      tainted: false,
+      humanAcceptance: "PENDING"
+    };
+    existingTitles.add(titleKey);
+    nextNumber += 1;
+    requirementsAdded += 1;
+  }
+
+  writeFile(traceabilityPath, `${JSON.stringify(traceability, null, 2)}\n`);
+  return {
+    requirementsAdded,
+    traceabilityPath: ".sadl/traceability.json"
+  };
+}
+
 async function commandIntake(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   if (options.fromJson) {
@@ -305,6 +520,9 @@ function commandStart(args) {
   if (validation.failures.length > 0) {
     console.log("Hard failures:");
     for (const failure of validation.failures) console.log(`- ${failure}`);
+  }
+  if (validation.failures.some((failure) => failure.includes("PRD/traceability"))) {
+    throw new Error("Cannot start while PRD and traceability are desynced.");
   }
   console.log(`Active task: ${activeTask || "No active task found"}`);
   console.log(`Last state: ${state || "No state summary found"}`);
@@ -575,6 +793,7 @@ function collectValidation(projectDir, options) {
   }
 
   checks.machineStateValid = checkSadlStateFiles(projectDir, warnings, failures);
+  checks.prdTraceabilitySync = checkPrdTraceabilitySync(projectDir, warnings, failures);
   checks.gitignoreSecrets = checkGitignore(projectDir, warnings, failures);
   checks.noTrackedSecrets = checkTrackedSecrets(projectDir, failures, warnings);
   checks.noSecretLeaks = scanSecretLeaks(projectDir, warnings);
@@ -1719,6 +1938,105 @@ function readStateSummary(projectDir) {
   return status ? status[1].trim() : null;
 }
 
+function parseMarkdownSections(content) {
+  const lines = String(content || "").split(/\r?\n/);
+  const sections = [];
+  let current = null;
+
+  lines.forEach((line, index) => {
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      if (current) sections.push(current);
+      current = {
+        level: heading[1].length,
+        title: heading[2].replace(/`/g, "").trim(),
+        line: index + 1,
+        body: []
+      };
+    } else if (current) {
+      current.body.push(line);
+    }
+  });
+  if (current) sections.push(current);
+  return sections.map((section) => ({
+    ...section,
+    body: section.body.join("\n").trim()
+  }));
+}
+
+function findSection(sections, patterns) {
+  return sections.find((section) => patterns.some((pattern) => pattern.test(section.title)));
+}
+
+function sectionHasPlaceholderOnly(body) {
+  const meaningful = String(body || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*\d.\s]+/, "").trim())
+    .filter(Boolean)
+    .filter((line) => !line.includes("[USER ACTION REQUIRED]"))
+    .filter((line) => !/^what|who|why|list|describe|none recorded/i.test(line));
+  return meaningful.length === 0;
+}
+
+function findVagueRequirementLines(content) {
+  const findings = [];
+  const lines = String(content || "").split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (!/^(\s*[-*]|\s*\d+\.)\s+/.test(line)) return;
+    if (MEASUREMENT_HINT_PATTERN.test(line)) return;
+    for (const word of VAGUE_REQUIREMENT_WORDS) {
+      const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, "i");
+      if (pattern.test(line)) {
+        findings.push({ line: index + 1, word, text: line.trim() });
+      }
+    }
+  });
+  return findings;
+}
+
+function extractRequirementCandidates(content) {
+  const candidates = [];
+  const sections = parseMarkdownSections(content);
+  const candidateSections = sections.filter((section) => [
+    /acceptance criteria/i,
+    /functional requirements/i,
+    /core workflows/i,
+    /mvp scope/i
+  ].some((pattern) => pattern.test(section.title)));
+
+  for (const section of candidateSections) {
+    const lines = section.body.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const bullet = line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)$/);
+      if (!bullet) return;
+      const title = bullet[1].replace(/\[USER ACTION REQUIRED\]/g, "").trim();
+      if (!title || title.length < 6) return;
+      candidates.push({
+        title,
+        line: section.line + index + 1
+      });
+    });
+  }
+  return candidates;
+}
+
+function nextRequirementNumber(requirements) {
+  const numbers = Object.keys(requirements || {})
+    .map((id) => id.match(/^FR-(\d+)$/))
+    .filter(Boolean)
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+  return numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+}
+
+function normalizeRequirementTitle(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function checkGitignore(projectDir, warnings, failures) {
   const gitignorePath = path.join(projectDir, ".gitignore");
   if (!fs.existsSync(gitignorePath)) {
@@ -1786,6 +2104,36 @@ function checkSadlStateFiles(projectDir, warnings, failures) {
   }
 
   return ok;
+}
+
+function checkPrdTraceabilitySync(projectDir, warnings, failures) {
+  const prdPath = path.join(projectDir, "docs/01_PRD.md");
+  const traceabilityPath = path.join(projectDir, ".sadl/traceability.json");
+  if (!fs.existsSync(prdPath) || !fs.existsSync(traceabilityPath)) return false;
+
+  const prd = readTextIfExists(prdPath);
+  const traceability = readJson(traceabilityPath);
+  if (!traceability) return false;
+
+  const recordedHash = traceability.sources?.prd?.hash;
+  const currentHash = hashText(prd);
+  const requirementCount = Object.keys(traceability.requirements || {}).length;
+
+  if (!recordedHash) {
+    if (requirementCount > 0) {
+      failures.push("PRD/traceability sync lock missing. Run sadl prd-check --fix-propose.");
+      return false;
+    }
+    warnings.push("PRD is not yet sync-locked to traceability. Run sadl prd-check --fix-propose when the PRD is ready.");
+    return true;
+  }
+
+  if (recordedHash !== currentHash) {
+    failures.push("PRD/traceability desync detected. Run sadl prd-check --fix-propose after reviewing PRD changes.");
+    return false;
+  }
+
+  return true;
 }
 
 function checkTrackedSecrets(projectDir, failures, warnings) {
