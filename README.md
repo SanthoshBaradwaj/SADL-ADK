@@ -30,6 +30,7 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - Traceable roadmap tasks with `TASK-*` IDs, requirement links, allowed paths, and evidence records.
 - Machine-readable handoff frontmatter in `docs/03_STATE.md` synced to `.sadl/runtime.json`.
 - Validation circuit breakers that turn repeated task failures/timeouts into `[BLOCKED]` recovery state.
+- Usage-aware checkpoints and `sadl metrics` for token/cost efficiency when the host or agent reports usage.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
@@ -152,6 +153,7 @@ sadl intake               # Print or run structured intake
 sadl prd-check [path]     # Check PRD sufficiency and propose requirement IDs
 sadl plan                 # Generate a first roadmap from the PRD
 sadl trace [path]         # Show requirement/task/evidence traceability
+sadl metrics [path]       # Show session usage and efficiency metrics
 sadl start [path]         # Show agent bootstrap instructions
 sadl status [path]        # Show active task, state, git, validation summary
 sadl validate [path]      # Check required files, state, secrets, manifest
@@ -375,6 +377,36 @@ Defaults live in `.sadl/config.json`:
 
 This is the first local anti-token-bleed control: once the loop is proven, the task stops and the next agent receives an explicit blocker instead of retrying blindly.
 
+## Usage Metrics
+
+SADL does not guess token usage. If the host, IDE, or agent can report usage, pass it during checkpoint:
+
+```bash
+sadl checkpoint . \
+  --task-id TASK-001 \
+  --task "TASK-001 Implement first workflow" \
+  --status DONE \
+  --input-tokens 1200 \
+  --output-tokens 300 \
+  --cost-usd 0.02 \
+  --usage-source agent_reported
+```
+
+Or pass a JSON payload:
+
+```bash
+sadl checkpoint . --task-id TASK-001 --task "TASK-001 ..." --status DONE --usage '{"inputTokens":1200,"outputTokens":300,"estimatedCostUsd":0.02,"source":"adapter"}'
+```
+
+Usage is written to the JSON session receipt and local-only `.sadl/telemetry.json`. Run:
+
+```bash
+sadl metrics .
+sadl metrics . --json
+```
+
+The report includes total tokens, estimated cost, completed tasks, agent-verified requirements, and token-efficiency ratios. `tokensPerAcceptedRequirement` remains `n/a` until humans mark requirements or tasks as accepted.
+
 ## AI Workflow Configuration
 
 SADL supports a common pattern for all AI coding assistants:
@@ -426,11 +458,11 @@ Current implementation:
 - SADL supports adapter files for common assistants.
 - SADL supports branch/worktree helpers for multi-agent work.
 - SADL supports `WAITING_FOR_APPROVAL` and `BLOCKED` handoff states.
-- SADL does not currently run a daemon that watches token usage live.
+- SADL does not currently run a daemon that watches token usage live. Usage metrics are recorded when a host or agent provides them at checkpoint time.
 - SADL does not currently auto-launch Claude, Codex, Gemini, or other agents.
 - SADL does not currently perform automatic model routing.
 
-The current handoff is checkpoint-driven, not daemon-driven. If all AI sessions are done, the repo remains resumable because `docs/03_STATE.md`, `docs/02_ROADMAP.md`, and Git contain the handoff. A future host adapter, MCP server, IDE extension, or CI integration can watch usage and trigger handoffs automatically.
+The current handoff is checkpoint-driven, not daemon-driven. If all AI sessions are done, the repo remains resumable because `docs/03_STATE.md`, `docs/02_ROADMAP.md`, and Git contain the handoff. A future host adapter, MCP server, IDE extension, or CI integration can watch usage live and trigger handoffs automatically.
 
 ## Supported AI Assistants
 
@@ -498,6 +530,9 @@ sadl checkpoint . \
   --model "configured-coder" \
   --commands "npm test,npm run lint" \
   --validation "passed" \
+  --input-tokens 1200 \
+  --output-tokens 300 \
+  --cost-usd 0.02 \
   --next "Start 1.2 Implement auth API route"
 ```
 

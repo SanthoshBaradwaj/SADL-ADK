@@ -253,6 +253,14 @@ try {
     "sadl validate",
     "--validation",
     "template validation passed",
+    "--input-tokens",
+    "1200",
+    "--output-tokens",
+    "300",
+    "--cost-usd",
+    "0.02",
+    "--usage-source",
+    "agent_reported",
     "--next",
     "Fill architecture spec"
   ]);
@@ -272,6 +280,20 @@ try {
 
   const logs = fs.readdirSync(path.join(project, "docs", "session_logs")).filter((file) => file.endsWith(".json"));
   assert.strictEqual(logs.length, 1, "checkpoint should write one JSON log");
+  const sessionLog = JSON.parse(fs.readFileSync(path.join(project, "docs", "session_logs", logs[0]), "utf8"));
+  assert.strictEqual(sessionLog.usage.totalTokens, 1500, "checkpoint should record total usage in session log");
+  const telemetry = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "telemetry.json"), "utf8"));
+  assert.strictEqual(telemetry.sessions.length, 1, "checkpoint should write local telemetry when usage exists");
+  assert.strictEqual(telemetry.sessions[0].estimatedCostUsd, 0.02, "telemetry should record cost");
+
+  result = run(["metrics", project, "--json"]);
+  assertOk(result, "metrics json");
+  const metrics = JSON.parse(result.stdout);
+  assert.strictEqual(metrics.usage.totalTokens, 1500, "metrics should total token usage");
+  assert.strictEqual(metrics.sessions.withUsage, 1, "metrics should count usage-aware sessions");
+  assert.strictEqual(metrics.tasks.completed, 1, "metrics should count completed tasks");
+  assert.strictEqual(metrics.requirements.agentVerified, 1, "metrics should count agent-verified requirement links");
+  assert.strictEqual(metrics.efficiency.tokensPerCompletedTask, 1500, "metrics should compute tokens per completed task");
 
   const breakerConfigPath = path.join(project, ".sadl", "config.json");
   const breakerConfig = JSON.parse(fs.readFileSync(breakerConfigPath, "utf8"));

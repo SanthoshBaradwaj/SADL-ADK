@@ -9,6 +9,7 @@ This audit records the current implementation boundary for `0.2.0-next.0`.
 - `sadl validate`: checks required files, config shape, secret safety, state, roadmap, manifest, protected-file changes, and session log schemas.
 - `sadl prd-check`: checks PRD sufficiency, vague wording, scope firewall, requirement candidates, and PRD/traceability sync proposals.
 - `sadl trace`: reports requirement/task/evidence coverage from `.sadl/traceability.json`.
+- `sadl metrics`: reports session usage, token totals, estimated cost, completed tasks, and basic efficiency ratios when usage was provided.
 - `sadl intake --from-json`: writes PRD, architecture spec, `.env.example`, setup docs, and config validation commands from structured input.
 - `sadl intake --write`: interactive wizard for the same generated files.
 - `sadl plan --write`: creates a first roadmap with a human approval gate.
@@ -25,6 +26,7 @@ This audit records the current implementation boundary for `0.2.0-next.0`.
 - JSON schema validation is local and lightweight. It covers the schema constructs used by SADL schemas, not the full JSON Schema specification.
 - `sadl plan` is deterministic and simple. It creates a starter roadmap from PRD bullets; it does not replace human or AI planning.
 - Loop prevention is task-scoped for validation failures/timeouts. Full live token and command-stream monitoring is future host/dashboard work.
+- Usage metrics are checkpoint-reported. SADL does not scrape private vendor billing or infer exact token usage without host-provided data.
 - The dashboard is static HTML. There is no hosted service.
 - Adapter generation creates instruction files. It is not a native IDE extension.
 - MCP integration is documented as a plan only. No MCP server is implemented yet.

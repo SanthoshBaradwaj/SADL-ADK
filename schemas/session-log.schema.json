@@ -89,6 +89,49 @@
         "null"
       ]
     },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "inputTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "totalTokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "estimatedCostUsd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "source": {
+          "enum": [
+            "adapter",
+            "agent_reported",
+            "manual",
+            "estimated",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
     "notes": {
       "type": "string"
     }

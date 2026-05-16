@@ -67,6 +67,12 @@ When checkpointing traceable work, include the task ID:
 sadl checkpoint . --task-id TASK-001 --task "TASK-001 ..." --status DONE
 ```
 
+If the host or agent UI reports token/cost usage, include it at checkpoint time:
+
+```bash
+sadl checkpoint . --task-id TASK-001 --task "TASK-001 ..." --status DONE --input-tokens 1200 --output-tokens 300 --cost-usd 0.02 --usage-source agent_reported
+```
+
 Do not remove the frontmatter at the top of `docs/03_STATE.md`; it is the machine-readable handoff for the next model or IDE.
 
 Each session must end in one of these outcomes:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added usage-aware checkpoints, local telemetry recording, and `sadl metrics` for token/cost efficiency reports.
 - Added validation circuit breakers for `sadl run` and `sadl validate --run`, with task-scoped counters, timeout tracking, roadmap blocking, and machine-readable recovery handoffs.
 - Added machine-readable `docs/03_STATE.md` frontmatter and checkpoint-to-runtime synchronization for deterministic handoffs.
 - Added strict validation warnings/failures for missing or desynced handoff frontmatter.

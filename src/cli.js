@@ -154,6 +154,8 @@ const DEFAULT_CIRCUIT_BREAKER_POLICY = {
   updateStateOnTrip: true
 };
 
+const USAGE_SOURCES = new Set(["adapter", "agent_reported", "manual", "estimated", "unknown"]);
+
 function main(argv) {
   const { command, args, options } = parseArgs(argv);
 
@@ -201,6 +203,8 @@ function main(argv) {
       return Promise.resolve(commandPlan(args, options));
     case "trace":
       return Promise.resolve(commandTrace(args, options));
+    case "metrics":
+      return Promise.resolve(commandMetrics(args, options));
     case "branch":
       return Promise.resolve(commandBranch(args, options));
     case "worktree":
@@ -260,12 +264,13 @@ Usage:
   sadl intake [path] [--write] [--from-json intake.json]
   sadl plan [path] [--write]
   sadl trace [path] [--json]
+  sadl metrics [path] [--json]
   sadl start [path]
   sadl status [path]
   sadl validate [path] [--strict] [--json] [--run] [--yes|--trust-command] [--unsafe-shell]
   sadl run [path] [--category lint|test|typecheck|build] [--yes|--trust-command] [--unsafe-shell]
   sadl manifest [path]
-  sadl checkpoint [path] --task "Task 1.1" --status WIP|DONE|BLOCKED
+  sadl checkpoint [path] --task "Task 1.1" --status WIP|DONE|BLOCKED [--usage '{"inputTokens":1000,"outputTokens":500}']
   sadl dream [path]
   sadl dashboard [path]
   sadl branch [path] --task "Task 1.1"
@@ -640,6 +645,35 @@ function commandTrace(args, options) {
   }
 }
 
+function commandMetrics(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  ensureProject(projectDir);
+  const report = buildMetricsReport(projectDir);
+
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log(`SADL metrics for ${projectDir}`);
+  console.log(`Sessions: ${report.sessions.total}`);
+  console.log(`Completed tasks: ${report.tasks.completed}`);
+  console.log(`Accepted requirements: ${report.requirements.accepted}`);
+  console.log(`Agent-verified requirements: ${report.requirements.agentVerified}`);
+  console.log(`Total tokens: ${report.usage.totalTokens}`);
+  console.log(`Estimated cost USD: ${formatMetricNumber(report.usage.estimatedCostUsd, 4)}`);
+  console.log(`Tokens per accepted requirement: ${formatNullableMetric(report.efficiency.tokensPerAcceptedRequirement)}`);
+  console.log(`Tokens per agent-verified requirement: ${formatNullableMetric(report.efficiency.tokensPerAgentVerifiedRequirement)}`);
+  console.log(`Tokens per completed task: ${formatNullableMetric(report.efficiency.tokensPerCompletedTask)}`);
+
+  if (Object.keys(report.sessions.byStatus).length > 0) {
+    console.log("\nSession status:");
+    for (const [status, count] of Object.entries(report.sessions.byStatus)) {
+      console.log(`- ${status}: ${count}`);
+    }
+  }
+}
+
 function commandBranch(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   const config = readConfig(projectDir, []);
@@ -937,6 +971,11 @@ function commandCheckpoint(args, options) {
   const next = String(options.next || "Review state and continue the active roadmap item.");
   const model = String(options.model || process.env.SADL_MODEL || "unspecified");
   const assistant = String(options.assistant || "unspecified");
+  const usage = parseUsageMetadata(options, {
+    sessionId,
+    model,
+    assistant
+  });
   const git = getGitStatus(projectDir);
   const taskId = String(options.taskId || inferTaskId(task) || "");
   const traceUpdate = updateTraceabilityFromCheckpoint(projectDir, {
@@ -964,7 +1003,12 @@ function commandCheckpoint(args, options) {
     updatedAt: timestamp,
     model,
     assistant,
-    validationStatus: inferValidationStatus(status, options.validation || "")
+    validationStatus: inferValidationStatus(status, options.validation || ""),
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    estimatedCostUsd: usage.estimatedCostUsd,
+    usageSource: usage.source
   };
 
   const stateBody = `# 03_STATE.md: SADL Current Session State
@@ -978,6 +1022,9 @@ function commandCheckpoint(args, options) {
 
 ## Dirty Files
 ${git.available ? formatList(git.changedFiles) : "- Git repository not initialized."}
+
+## Usage
+${formatUsageMarkdown(usage)}
 
 ## Handoff Notes
 ${String(options.notes || "No additional notes.")}
@@ -1006,11 +1053,23 @@ ${String(options.notes || "No additional notes.")}
     filesChanged: git.available ? git.changedFiles : [],
     validation: options.validation || "not recorded",
     commitHash: git.head || null,
+    usage,
     notes: options.notes || ""
   };
 
   appendSessionLog(projectDir, logEntry);
   writeJsonLog(projectDir, logEntry);
+  recordTelemetrySession(projectDir, {
+    ...usage,
+    sessionId,
+    agentId: assistant,
+    taskId: taskId || null,
+    requirementIds,
+    status,
+    model,
+    assistant,
+    recordedAt: timestamp
+  });
   commandManifest([projectDir], { quiet: true });
 
   console.log(`Checkpoint written for ${task}: ${status}`);
@@ -2240,10 +2299,8 @@ function buildBranchName(config, task) {
 }
 
 function buildDashboardData(projectDir) {
-  const logsDir = path.join(projectDir, "docs/session_logs");
-  const logs = fs.existsSync(logsDir)
-    ? listFiles(logsDir).filter((file) => file.endsWith(".json")).map((file) => readJson(file)).filter(Boolean)
-    : [];
+  const logs = readSessionLogs(projectDir);
+  const metrics = buildMetricsReport(projectDir);
   const statusCounts = Object.fromEntries(countValues(logs.map((log) => log.status)));
   const blockerCounts = countValues(logs.map((log) => log.blocker).filter(Boolean)).slice(0, 10);
   const commandCounts = countValues(logs.flatMap((log) => log.commandsRun || [])).slice(0, 10);
@@ -2257,9 +2314,120 @@ function buildDashboardData(projectDir) {
     statusCounts,
     waitingMinutes: logs.reduce((sum, log) => sum + Number(log.waitingMinutes || 0), 0),
     approvalsRequested: logs.reduce((sum, log) => sum + Number(log.approvalsRequested || 0), 0),
+    metrics,
     topBlockers: blockerCounts,
     repeatedCommands: commandCounts
   };
+}
+
+function buildMetricsReport(projectDir) {
+  const logs = readSessionLogs(projectDir);
+  const telemetry = readTelemetry(projectDir);
+  const traceability = readTraceability(projectDir);
+  const usageRecords = mergeUsageRecords(logs, telemetry.sessions || []);
+  const statusCounts = Object.fromEntries(countValues(logs.map((log) => log.status)));
+  const completedTaskIds = new Set();
+  const acceptedRequirementIds = new Set();
+  const agentVerifiedRequirementIds = new Set();
+
+  for (const log of logs) {
+    if (log.taskId && ["DONE", "DONE_COMMITTED"].includes(log.status)) {
+      completedTaskIds.add(log.taskId);
+    }
+  }
+
+  for (const [requirementId, requirement] of Object.entries(traceability.requirements || {})) {
+    if (requirement.status === "ACCEPTED") acceptedRequirementIds.add(requirementId);
+  }
+
+  for (const [taskId, task] of Object.entries(traceability.tasks || {})) {
+    const status = task.status || "TODO";
+    if (["AGENT_VERIFIED", "ACCEPTED"].includes(status)) completedTaskIds.add(taskId);
+    for (const requirementId of task.requirementIds || []) {
+      if (status === "ACCEPTED") acceptedRequirementIds.add(requirementId);
+      if (["AGENT_VERIFIED", "ACCEPTED"].includes(status)) agentVerifiedRequirementIds.add(requirementId);
+    }
+  }
+
+  const totals = usageRecords.reduce((sum, record) => {
+    const inputTokens = Number(record.inputTokens || 0);
+    const outputTokens = Number(record.outputTokens || 0);
+    const totalTokens = Number(record.totalTokens || inputTokens + outputTokens || 0);
+    return {
+      inputTokens: sum.inputTokens + inputTokens,
+      outputTokens: sum.outputTokens + outputTokens,
+      totalTokens: sum.totalTokens + totalTokens,
+      estimatedCostUsd: sum.estimatedCostUsd + Number(record.estimatedCostUsd || 0)
+    };
+  }, {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    estimatedCostUsd: 0
+  });
+
+  return {
+    generatedAt: new Date().toISOString(),
+    project: projectDir,
+    sessions: {
+      total: logs.length,
+      withUsage: usageRecords.length,
+      byStatus: statusCounts
+    },
+    tasks: {
+      total: Object.keys(traceability.tasks || {}).length,
+      completed: completedTaskIds.size,
+      blocked: Object.values(traceability.tasks || {}).filter((task) => task.status === "BLOCKED").length
+    },
+    requirements: {
+      total: Object.keys(traceability.requirements || {}).length,
+      accepted: acceptedRequirementIds.size,
+      agentVerified: agentVerifiedRequirementIds.size
+    },
+    usage: {
+      inputTokens: totals.inputTokens,
+      outputTokens: totals.outputTokens,
+      totalTokens: totals.totalTokens,
+      estimatedCostUsd: Number(totals.estimatedCostUsd.toFixed(6))
+    },
+    efficiency: {
+      tokensPerAcceptedRequirement: safeDivide(totals.totalTokens, acceptedRequirementIds.size),
+      tokensPerAgentVerifiedRequirement: safeDivide(totals.totalTokens, agentVerifiedRequirementIds.size),
+      tokensPerCompletedTask: safeDivide(totals.totalTokens, completedTaskIds.size),
+      costPerCompletedTaskUsd: safeDivide(totals.estimatedCostUsd, completedTaskIds.size)
+    }
+  };
+}
+
+function readSessionLogs(projectDir) {
+  const logsDir = path.join(projectDir, "docs/session_logs");
+  return fs.existsSync(logsDir)
+    ? listFiles(logsDir).filter((file) => file.endsWith(".json")).map((file) => readJson(file)).filter(Boolean)
+    : [];
+}
+
+function mergeUsageRecords(logs, telemetrySessions) {
+  const bySessionId = new Map();
+  for (const log of logs) {
+    if (log.sessionId && hasUsage(log.usage)) {
+      bySessionId.set(log.sessionId, {
+        sessionId: log.sessionId,
+        taskId: log.taskId || null,
+        model: log.model || null,
+        assistant: log.assistant || null,
+        ...log.usage
+      });
+    }
+  }
+  for (const session of telemetrySessions || []) {
+    if (session.sessionId && hasUsage(session)) {
+      bySessionId.set(session.sessionId, {
+        ...(bySessionId.get(session.sessionId) || {}),
+        ...session
+      });
+    }
+  }
+  return Array.from(bySessionId.values());
 }
 
 function renderDashboardHtml(data) {
@@ -2294,6 +2462,9 @@ function renderDashboardHtml(data) {
     <div class="metric"><span>Sessions</span><strong>${data.sessions}</strong></div>
     <div class="metric"><span>Approval Requests</span><strong>${data.approvalsRequested}</strong></div>
     <div class="metric"><span>Waiting Minutes</span><strong>${data.waitingMinutes}</strong></div>
+    <div class="metric"><span>Total Tokens</span><strong>${data.metrics.usage.totalTokens}</strong></div>
+    <div class="metric"><span>Completed Tasks</span><strong>${data.metrics.tasks.completed}</strong></div>
+    <div class="metric"><span>Tokens / Task</span><strong>${formatNullableMetric(data.metrics.efficiency.tokensPerCompletedTask)}</strong></div>
   </section>
   <section>
     <h2>Status Counts</h2>
@@ -2496,13 +2667,60 @@ function writeFile(filePath, content) {
 
 function appendSessionLog(projectDir, entry) {
   const filePath = path.join(projectDir, "docs/05_SESSION_LOG.md");
-  const line = `\n## ${entry.endedAt} - ${entry.status} - ${entry.task}\n- Model: ${entry.model}\n- Assistant: ${entry.assistant}\n- Blocker: ${entry.blocker}\n- Next: ${entry.nextAction}\n- Files changed: ${entry.filesChanged.length}\n- Commit: ${entry.commitHash || "not recorded"}\n`;
+  const line = `\n## ${entry.endedAt} - ${entry.status} - ${entry.task}\n- Model: ${entry.model}\n- Assistant: ${entry.assistant}\n- Blocker: ${entry.blocker}\n- Next: ${entry.nextAction}\n- Files changed: ${entry.filesChanged.length}\n- Commit: ${entry.commitHash || "not recorded"}\n- Usage: ${formatUsageLine(entry.usage)}\n`;
   fs.appendFileSync(filePath, line, "utf8");
 }
 
 function writeJsonLog(projectDir, entry) {
   const filePath = path.join(projectDir, "docs/session_logs", `${entry.sessionId}.json`);
   writeFile(filePath, `${JSON.stringify(entry, null, 2)}\n`);
+}
+
+function recordTelemetrySession(projectDir, entry) {
+  if (!hasUsage(entry)) return;
+  const telemetry = readTelemetry(projectDir);
+  telemetry.sessions = telemetry.sessions || [];
+  const index = telemetry.sessions.findIndex((session) => session.sessionId === entry.sessionId);
+  const nextEntry = {
+    sessionId: entry.sessionId,
+    agentId: entry.agentId || entry.assistant || "unspecified",
+    taskId: entry.taskId || null,
+    requirementIds: entry.requirementIds || [],
+    model: entry.model || "unspecified",
+    assistant: entry.assistant || "unspecified",
+    status: entry.status || "UNKNOWN",
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
+    totalTokens: entry.totalTokens,
+    estimatedCostUsd: entry.estimatedCostUsd,
+    source: entry.source || "unknown",
+    recordedAt: entry.recordedAt || new Date().toISOString()
+  };
+  if (index === -1) {
+    telemetry.sessions.push(nextEntry);
+  } else {
+    telemetry.sessions[index] = {
+      ...telemetry.sessions[index],
+      ...nextEntry
+    };
+  }
+  writeTelemetry(projectDir, telemetry);
+}
+
+function readTelemetry(projectDir) {
+  const telemetry = readJson(path.join(projectDir, ".sadl/telemetry.json"));
+  if (telemetry) {
+    telemetry.sessions = telemetry.sessions || [];
+    return telemetry;
+  }
+  return templateJson(".sadl/telemetry.json", "standard");
+}
+
+function writeTelemetry(projectDir, telemetry) {
+  telemetry.schemaVersion = telemetry.schemaVersion || "1.0";
+  telemetry.sadlVersion = telemetry.sadlVersion || SADL_VERSION;
+  telemetry.sessions = telemetry.sessions || [];
+  writeFile(path.join(projectDir, ".sadl/telemetry.json"), `${JSON.stringify(telemetry, null, 2)}\n`);
 }
 
 function writeStateFile(projectDir, frontmatter, body) {
@@ -3130,6 +3348,20 @@ function formatList(values) {
   return values.map((value) => `- ${value}`).join("\n");
 }
 
+function safeDivide(numerator, denominator) {
+  if (!denominator) return null;
+  return Number((Number(numerator || 0) / denominator).toFixed(2));
+}
+
+function formatNullableMetric(value) {
+  return value === null || value === undefined ? "n/a" : String(value);
+}
+
+function formatMetricNumber(value, digits = 2) {
+  const number = Number(value || 0);
+  return Number(number.toFixed(digits)).toString();
+}
+
 function splitCsv(value) {
   if (!value) return [];
   return String(value).split(",").map((item) => item.trim()).filter(Boolean);
@@ -3138,6 +3370,118 @@ function splitCsv(value) {
 function parseNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function parseUsageMetadata(options, defaults = {}) {
+  const fromJson = parseUsageJson(options.usage);
+  const inputTokens = parseOptionalNonNegativeInteger(firstDefined(
+    options.inputTokens,
+    options.input,
+    fromJson.inputTokens,
+    fromJson.input,
+    fromJson.in
+  ));
+  const outputTokens = parseOptionalNonNegativeInteger(firstDefined(
+    options.outputTokens,
+    options.output,
+    fromJson.outputTokens,
+    fromJson.output,
+    fromJson.out
+  ));
+  const explicitTotalTokens = parseOptionalNonNegativeInteger(firstDefined(
+    options.totalTokens,
+    fromJson.totalTokens,
+    fromJson.total
+  ));
+  const totalTokens = explicitTotalTokens !== null
+    ? explicitTotalTokens
+    : (inputTokens !== null || outputTokens !== null ? Number(inputTokens || 0) + Number(outputTokens || 0) : null);
+  const estimatedCostUsd = parseOptionalNonNegativeNumber(firstDefined(
+    options.costUsd,
+    options.estimatedCostUsd,
+    options.cost,
+    fromJson.estimatedCostUsd,
+    fromJson.costUsd,
+    fromJson.cost
+  ));
+  const source = String(firstDefined(options.usageSource, fromJson.source, "unknown"));
+  if (!USAGE_SOURCES.has(source)) {
+    throw new Error(`unsupported usage source "${source}". Use ${Array.from(USAGE_SOURCES).join(", ")}.`);
+  }
+
+  return {
+    sessionId: defaults.sessionId || null,
+    model: defaults.model || null,
+    assistant: defaults.assistant || null,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    estimatedCostUsd,
+    source
+  };
+}
+
+function parseUsageJson(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    throw new Error(`invalid --usage JSON: ${error.message}`);
+  }
+}
+
+function parseOptionalNonNegativeInteger(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) {
+    throw new Error(`expected a non-negative integer token count, received "${value}".`);
+  }
+  return number;
+}
+
+function parseOptionalNonNegativeNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new Error(`expected a non-negative number, received "${value}".`);
+  }
+  return number;
+}
+
+function firstDefined(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "");
+}
+
+function hasUsage(usage) {
+  return Boolean(usage) && (
+    usage.inputTokens !== undefined && usage.inputTokens !== null ||
+    usage.outputTokens !== undefined && usage.outputTokens !== null ||
+    usage.totalTokens !== undefined && usage.totalTokens !== null ||
+    usage.estimatedCostUsd !== undefined && usage.estimatedCostUsd !== null
+  );
+}
+
+function formatUsageMarkdown(usage) {
+  if (!hasUsage(usage)) return "- Not recorded.";
+  return [
+    `- Input tokens: ${usage.inputTokens ?? "not recorded"}`,
+    `- Output tokens: ${usage.outputTokens ?? "not recorded"}`,
+    `- Total tokens: ${usage.totalTokens ?? "not recorded"}`,
+    `- Estimated cost USD: ${usage.estimatedCostUsd ?? "not recorded"}`,
+    `- Source: ${usage.source || "unknown"}`
+  ].join("\n");
+}
+
+function formatUsageLine(usage) {
+  if (!hasUsage(usage)) return "not recorded";
+  const parts = [];
+  if (usage.inputTokens !== null && usage.inputTokens !== undefined) parts.push(`in=${usage.inputTokens}`);
+  if (usage.outputTokens !== null && usage.outputTokens !== undefined) parts.push(`out=${usage.outputTokens}`);
+  if (usage.totalTokens !== null && usage.totalTokens !== undefined) parts.push(`total=${usage.totalTokens}`);
+  if (usage.estimatedCostUsd !== null && usage.estimatedCostUsd !== undefined) parts.push(`costUsd=${usage.estimatedCostUsd}`);
+  parts.push(`source=${usage.source || "unknown"}`);
+  return parts.join(", ");
 }
 
 function parsePositiveInteger(value, fallback) {

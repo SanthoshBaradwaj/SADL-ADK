@@ -20,7 +20,7 @@ AGENTS.md                  Agent operating rules
 .sadl/traceability.json    Requirement/task/evidence ledger
 .sadl/runtime.json         Local-only session state and circuit breaker counters
 .sadl/approvals.json       Local-only command and exception approvals
-.sadl/telemetry.json       Local-only token/cost telemetry
+.sadl/telemetry.json       Local-only checkpoint-reported token/cost telemetry
 .sadl_manifest.json        Generated hash manifest
 docs/01_PRD.md             Product intent
 docs/02_ROADMAP.md         Task ledger
@@ -47,6 +47,10 @@ The core CLI does not infer language-level dependency graphs. Task dependencies,
 ## Circuit Breakers
 
 Approved validation failures and timeouts are counted per active `TASK-*`. Approval denials are governance waits, not work failures. When the configured policy trips, the CLI marks the task `BLOCKED` in the traceability ledger, updates the roadmap, and rewrites `docs/03_STATE.md` with a recovery handoff. This prevents repeated test/debug loops from becoming token bleed.
+
+## Metrics
+
+SADL records usage only when a host adapter, IDE, or agent reports it during checkpoint. The local telemetry file is gitignored because usage and cost can be personal to a developer or machine. `sadl metrics` merges telemetry and session receipts to estimate token efficiency per completed task or accepted requirement without relying on a vendor-specific billing API.
 
 ## Host Adapter
 

@@ -46,12 +46,34 @@
             ],
             "minimum": 0
           },
+          "totalTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
           "estimatedCostUsd": {
             "type": [
               "number",
               "null"
             ],
             "minimum": 0
+          },
+          "requirementIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "assistant": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           },
           "source": {
             "enum": [
@@ -61,6 +83,9 @@
               "estimated",
               "unknown"
             ]
+          },
+          "recordedAt": {
+            "type": "string"
           }
         },
         "additionalProperties": true

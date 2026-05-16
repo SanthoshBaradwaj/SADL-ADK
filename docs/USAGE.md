@@ -75,7 +75,11 @@ sadl checkpoint . \
   --task-id TASK-001 \
   --task "TASK-001 Implement first MVP workflow" \
   --status DONE \
-  --validation "tests passed"
+  --validation "tests passed" \
+  --input-tokens 1200 \
+  --output-tokens 300 \
+  --cost-usd 0.02 \
+  --usage-source agent_reported
 ```
 
 ## Migrating Older SADL Projects
@@ -118,6 +122,17 @@ sadl checkpoint . \
 ```
 
 Checkpoints write strict frontmatter to `docs/03_STATE.md` and synchronize `.sadl/runtime.json`. The frontmatter is the machine-readable handoff; the Markdown body is the human-readable summary.
+
+## Metrics
+
+Usage metadata is optional and must come from the host, adapter, or agent report. SADL stores it locally and summarizes it with:
+
+```bash
+sadl metrics .
+sadl metrics . --json
+```
+
+The report includes total tokens, estimated cost, completed tasks, agent-verified requirements, and token-efficiency ratios. SADL does not infer usage when no host or agent reports it.
 
 ## Commit
 
