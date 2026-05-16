@@ -52,11 +52,31 @@ Then fill the missing PRD and architecture sections. Do not start code work unti
 ```bash
 npx --package create-sadl-project sadl prd-check .
 npx --package create-sadl-project sadl prd-check . --fix-propose
+npx --package create-sadl-project sadl trace .
 ```
 
 `prd-check` acts like a linter for human requirements. It checks required PRD concepts, catches empty scope firewalls, warns on vague words like `fast` or `secure` without measurement, and writes requirement proposals to `.sadl/traceability.json` without mutating `docs/01_PRD.md`.
 
 After `--fix-propose`, the PRD hash is sync-locked into traceability. Editing the PRD later causes `sadl validate` to fail until the change is reviewed and re-synced.
+
+## Traceability
+
+Generate task IDs from approved requirement proposals:
+
+```bash
+npx --package create-sadl-project sadl plan . --write
+npx --package create-sadl-project sadl trace .
+```
+
+Roadmap tasks use `TASK-*` and requirement IDs. Checkpoints can update the traceability ledger:
+
+```bash
+sadl checkpoint . \
+  --task-id TASK-001 \
+  --task "TASK-001 Implement first MVP workflow" \
+  --status DONE \
+  --validation "tests passed"
+```
 
 ## Migrating Older SADL Projects
 

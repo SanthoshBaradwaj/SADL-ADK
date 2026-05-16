@@ -187,6 +187,14 @@ try {
   assertOk(result, "plan write");
   const roadmap = fs.readFileSync(path.join(project, "docs", "02_ROADMAP.md"), "utf8");
   assert.match(roadmap, /NEEDS_REVIEW/, "plan should add approval gate");
+  assert.match(roadmap, /TASK-001/, "plan should write task IDs");
+  assert.match(roadmap, /FR-001/, "plan should link tasks to requirement IDs");
+
+  result = run(["trace", project, "--json"]);
+  assertOk(result, "trace json");
+  const traceReport = JSON.parse(result.stdout);
+  assert(traceReport.tasks.total > 0, "trace should report tasks");
+  assert.strictEqual(traceReport.coveragePercent, 100, "traceable generated plan should have full coverage");
 
   result = run(["run", project, "--category", "test"]);
   assert.notStrictEqual(result.status, 0, "validation runner should require approval by default");
@@ -230,6 +238,8 @@ try {
     project,
     "--task",
     "0.1 Complete PRD",
+    "--task-id",
+    "TASK-001",
     "--status",
     "DONE",
     "--model",
@@ -244,6 +254,9 @@ try {
   assertOk(result, "checkpoint");
   const state = fs.readFileSync(path.join(project, "docs", "03_STATE.md"), "utf8");
   assert.match(state, /Task Status: DONE - 0.1 Complete PRD/, "checkpoint should update state");
+  traceability = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "traceability.json"), "utf8"));
+  assert.strictEqual(traceability.tasks["TASK-001"].status, "AGENT_VERIFIED", "checkpoint should update task traceability status");
+  assert(traceability.evidence.some((entry) => entry.taskId === "TASK-001"), "checkpoint should write task evidence");
 
   const logs = fs.readdirSync(path.join(project, "docs", "session_logs")).filter((file) => file.endsWith(".json"));
   assert.strictEqual(logs.length, 1, "checkpoint should write one JSON log");

@@ -27,6 +27,7 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - Secret-safe defaults.
 - Security gates for configured command execution and path-aware commits.
 - PRD sufficiency checks and PRD/traceability sync-locking.
+- Traceable roadmap tasks with `TASK-*` IDs, requirement links, allowed paths, and evidence records.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
@@ -148,6 +149,7 @@ sadl adopt [path]         # Add SADL files to an existing project
 sadl intake               # Print or run structured intake
 sadl prd-check [path]     # Check PRD sufficiency and propose requirement IDs
 sadl plan                 # Generate a first roadmap from the PRD
+sadl trace [path]         # Show requirement/task/evidence traceability
 sadl start [path]         # Show agent bootstrap instructions
 sadl status [path]        # Show active task, state, git, validation summary
 sadl validate [path]      # Check required files, state, secrets, manifest
@@ -200,6 +202,7 @@ sadl validate . --strict
 
 ```bash
 sadl plan . --write
+sadl trace .
 ```
 
 Then ask an AI assistant to refine it if needed:
@@ -303,6 +306,23 @@ sadl prd-check . --fix-propose
 ```
 
 `prd-check` verifies concept coverage, flags unresolved placeholders, warns on vague words without measurable acceptance criteria, and can propose requirement IDs into `.sadl/traceability.json` without rewriting `docs/01_PRD.md`. Once proposed, SADL stores the PRD hash in the traceability ledger. If the PRD changes later, `sadl validate` reports a PRD/traceability desync until the human reviews and re-runs `sadl prd-check --fix-propose`.
+
+## Traceability Ledger
+
+After `sadl prd-check --fix-propose`, run:
+
+```bash
+sadl plan . --write
+sadl trace .
+```
+
+The generated roadmap uses explicit task and requirement IDs:
+
+```text
+- [TODO] [TASK-001] [FR-001] Implement: User can create a task
+```
+
+`.sadl/traceability.json` stores each task's requirement links, default `allowedPaths`, dependencies, risk level, human-review requirement, and checkpoint evidence. Agents should preserve these IDs in roadmap updates and pass `--task-id TASK-001` when checkpointing.
 
 ## AI Workflow Configuration
 

@@ -30,6 +30,16 @@ docs/05_SESSION_LOG.md     Human-readable session ledger
 docs/session_logs/*.json   Machine-readable session receipts
 ```
 
+## Traceability Chain
+
+SADL uses `.sadl/traceability.json` to connect:
+
+```text
+Requirement -> Task -> Allowed Paths -> Validation Evidence -> Commit/Session Receipt
+```
+
+The core CLI does not infer language-level dependency graphs. Task dependencies, allowed paths, and parallel-safety must be explicit in the traceability ledger.
+
 ## Host Adapter
 
 The host adapter is the enforcing layer. In this MVP, the host adapter is the CLI. In later integrations it can be a Codex skill, Claude hook, Cursor rule generator, IDE extension, CI action, or MCP server.

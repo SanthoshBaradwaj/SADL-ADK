@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added traceable roadmap planning with `TASK-*` IDs, requirement links, default allowed paths, and task metadata in `.sadl/traceability.json`.
+- Added `sadl trace` to report requirement/task/evidence coverage.
+- Added checkpoint evidence updates for traceable tasks.
 - Added `sadl prd-check` for PRD sufficiency scoring, vague-word warnings, requirement ID proposals, and PRD/traceability sync-locking.
 - Added validation failure when an already sync-locked PRD changes without refreshing `.sadl/traceability.json`.
 - Added security hardening for configured command execution: command approval gates, local command fingerprints, `--yes`, `--trust-command`, and `--unsafe-shell`.

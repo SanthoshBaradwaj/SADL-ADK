@@ -128,6 +128,24 @@ const VAGUE_REQUIREMENT_WORDS = [
 
 const MEASUREMENT_HINT_PATTERN = /(\d|<|>|<=|>=|%|ms\b|sec(ond)?s?\b|min(ute)?s?\b|p95|p99|sla|rps|requests?|users?|coverage|wcag|kb\b|mb\b|gb\b)/i;
 
+const DEFAULT_TASK_ALLOWED_PATHS = [
+  "src/**",
+  "tests/**",
+  "docs/03_STATE.md",
+  "docs/05_SESSION_LOG.md",
+  "docs/session_logs/**",
+  ".sadl/traceability.json"
+];
+
+const TASK_STATUS_MAP = {
+  DONE: "AGENT_VERIFIED",
+  WIP: "WIP",
+  BLOCKED: "BLOCKED",
+  FAILED_TESTS: "BLOCKED",
+  NEEDS_REVIEW: "PENDING_HUMAN_REVIEW",
+  WAITING_FOR_APPROVAL: "PENDING_HUMAN_REVIEW"
+};
+
 function main(argv) {
   const { command, args, options } = parseArgs(argv);
 
@@ -173,6 +191,8 @@ function main(argv) {
       return commandIntake(args, options);
     case "plan":
       return Promise.resolve(commandPlan(args, options));
+    case "trace":
+      return Promise.resolve(commandTrace(args, options));
     case "branch":
       return Promise.resolve(commandBranch(args, options));
     case "worktree":
@@ -231,6 +251,7 @@ Usage:
   sadl prd-check [path] [--json] [--fix-propose]
   sadl intake [path] [--write] [--from-json intake.json]
   sadl plan [path] [--write]
+  sadl trace [path] [--json]
   sadl start [path]
   sadl status [path]
   sadl validate [path] [--strict] [--json] [--run] [--yes|--trust-command] [--unsafe-shell]
@@ -538,13 +559,16 @@ function commandPlan(args, options) {
   const projectDir = path.resolve(args[0] || ".");
   ensureProject(projectDir);
   const prd = readTextIfExists(path.join(projectDir, "docs/01_PRD.md"));
-  const tasks = buildRoadmapTasksFromPrd(prd);
+  const plan = buildTraceablePlan(projectDir, prd);
   const roadmap = `# 02_ROADMAP.md: SADL Roadmap Ledger
 
 ## Task State Legend
 - \`[TODO]\` Ready to start.
 - \`[WIP]\` In active implementation.
-- \`[DONE]\` Completed and validated.
+- \`[AGENT_VERIFIED]\` Agent completed validation; human review may still be pending.
+- \`[PENDING_HUMAN_REVIEW]\` Human review is required before acceptance.
+- \`[ACCEPTED]\` Human accepted the task.
+- \`[REJECTED]\` Human rejected the task and recorded feedback.
 - \`[BLOCKED]\` Cannot proceed without external action.
 - \`[FAILED_TESTS]\` Implementation exists but validation failed.
 - \`[NEEDS_REVIEW]\` Human review required.
@@ -553,7 +577,7 @@ function commandPlan(args, options) {
 - \`[ABANDONED]\` No longer planned.
 
 ## Current Roadmap
-${tasks.map((task, index) => `- [TODO] ${index + 1}. ${task}`).join("\n")}
+${plan.tasks.map((task) => `- [TODO] [${task.taskId}]${task.requirementIds.length ? ` [${task.requirementIds.join(",")}]` : ""} ${task.title}`).join("\n")}
 
 ## Approval Gate
 - [NEEDS_REVIEW] Human must approve this generated roadmap before implementation begins.
@@ -561,15 +585,50 @@ ${tasks.map((task, index) => `- [TODO] ${index + 1}. ${task}`).join("\n")}
 ## Planning Rules
 - Keep tasks small enough to complete, validate, checkpoint, and commit in one session.
 - Each task must have acceptance criteria.
+- Each task must keep \`TASK-*\`, requirement references, \`depends_on\`, and \`allowed_paths\` in \`.sadl/traceability.json\` synchronized.
 - Parallel agents may not edit the same source file unless explicitly serialized by the coordinator.
 `;
 
   if (options.write) {
     writeFile(path.join(projectDir, "docs/02_ROADMAP.md"), roadmap);
+    writeTraceability(projectDir, plan.traceability);
     commandManifest([projectDir], { quiet: true });
-    console.log(`Roadmap written with ${tasks.length} generated tasks.`);
+    console.log(`Roadmap written with ${plan.tasks.length} traceable tasks.`);
   } else {
     console.log(roadmap);
+  }
+}
+
+function commandTrace(args, options) {
+  const projectDir = path.resolve(args[0] || ".");
+  ensureProject(projectDir);
+  const traceability = readTraceability(projectDir);
+  const report = buildTraceabilityReport(projectDir, traceability);
+
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log(`SADL traceability for ${projectDir}`);
+  console.log(`Requirements: ${report.requirements.total}`);
+  console.log(`Tasks: ${report.tasks.total}`);
+  console.log(`Evidence records: ${report.evidence.total}`);
+  console.log(`Trace coverage: ${report.coveragePercent}%`);
+
+  if (report.tasks.missingRequirements.length > 0) {
+    console.log("\nTasks missing valid requirements:");
+    for (const taskId of report.tasks.missingRequirements) console.log(`- ${taskId}`);
+  }
+
+  if (report.tasks.missingAllowedPaths.length > 0) {
+    console.log("\nTasks missing allowed_paths:");
+    for (const taskId of report.tasks.missingAllowedPaths) console.log(`- ${taskId}`);
+  }
+
+  console.log("\nTask summary:");
+  for (const task of report.taskSummary) {
+    console.log(`- ${task.taskId} [${task.status}] ${task.requirementIds.join(",") || "NO_REQ"} ${task.title}`);
   }
 }
 
@@ -794,6 +853,7 @@ function collectValidation(projectDir, options) {
 
   checks.machineStateValid = checkSadlStateFiles(projectDir, warnings, failures);
   checks.prdTraceabilitySync = checkPrdTraceabilitySync(projectDir, warnings, failures);
+  checks.traceabilityTasksScoped = checkTraceabilityTaskMetadata(projectDir, options, warnings, failures);
   checks.gitignoreSecrets = checkGitignore(projectDir, warnings, failures);
   checks.noTrackedSecrets = checkTrackedSecrets(projectDir, failures, warnings);
   checks.noSecretLeaks = scanSecretLeaks(projectDir, warnings);
@@ -860,6 +920,7 @@ function commandCheckpoint(args, options) {
   const next = String(options.next || "Review state and continue the active roadmap item.");
   const model = String(options.model || process.env.SADL_MODEL || "unspecified");
   const git = getGitStatus(projectDir);
+  const taskId = String(options.taskId || inferTaskId(task) || "");
 
   const state = `# 03_STATE.md: SADL Current Session State
 
@@ -886,6 +947,7 @@ ${String(options.notes || "No additional notes.")}
     endedAt: timestamp,
     model,
     assistant: options.assistant || "unspecified",
+    taskId: taskId || null,
     task,
     status,
     blocker,
@@ -899,11 +961,67 @@ ${String(options.notes || "No additional notes.")}
     notes: options.notes || ""
   };
 
+  const traceUpdate = updateTraceabilityFromCheckpoint(projectDir, {
+    taskId,
+    status,
+    sessionId: logEntry.sessionId,
+    filesChanged: logEntry.filesChanged,
+    commandsRun: logEntry.commandsRun,
+    validation: logEntry.validation,
+    commitHash: logEntry.commitHash
+  });
+  if (traceUpdate) {
+    logEntry.requirementIds = traceUpdate.requirementIds;
+    logEntry.acceptanceCriteriaIds = traceUpdate.acceptanceCriteriaIds;
+  }
+
   appendSessionLog(projectDir, logEntry);
   writeJsonLog(projectDir, logEntry);
   commandManifest([projectDir], { quiet: true });
 
   console.log(`Checkpoint written for ${task}: ${status}`);
+}
+
+function updateTraceabilityFromCheckpoint(projectDir, input) {
+  if (!input.taskId) return null;
+  const traceability = readTraceability(projectDir);
+  const task = traceability.tasks?.[input.taskId];
+  if (!task) return null;
+
+  const mappedStatus = TASK_STATUS_MAP[input.status] || "WIP";
+  task.status = mappedStatus;
+  task.lastSessionId = input.sessionId;
+  task.lastUpdatedAt = new Date().toISOString();
+  task.filesTouched = Array.from(new Set([...(task.filesTouched || []), ...(input.filesChanged || [])]));
+  traceability.tasks[input.taskId] = task;
+
+  const evidence = {
+    requirementId: (task.requirementIds || [])[0] || "",
+    acceptanceCriteriaIds: task.acceptanceCriteriaIds || [],
+    taskId: input.taskId,
+    filesTouched: input.filesChanged || [],
+    testsRun: input.commandsRun || [],
+    validationStatus: inferValidationStatus(input.status, input.validation),
+    humanAcceptance: "PENDING",
+    commitHash: input.commitHash || null,
+    sessionId: input.sessionId,
+    recordedAt: new Date().toISOString()
+  };
+  traceability.evidence = [...(traceability.evidence || []), evidence];
+  writeTraceability(projectDir, traceability);
+
+  return {
+    requirementIds: task.requirementIds || [],
+    acceptanceCriteriaIds: task.acceptanceCriteriaIds || []
+  };
+}
+
+function inferValidationStatus(status, validation) {
+  const text = `${status} ${validation || ""}`.toLowerCase();
+  if (text.includes("fail") || status === "FAILED_TESTS") return "FAILED";
+  if (text.includes("pass") || status === "DONE") return "PASSED";
+  if (text.includes("skip")) return "SKIPPED";
+  return "UNKNOWN";
 }
 
 function commandManifest(args, options) {
@@ -1630,6 +1748,160 @@ function buildRoadmapTasksFromPrd(prd) {
   ];
 }
 
+function buildTraceablePlan(projectDir, prd) {
+  const traceability = readTraceability(projectDir);
+  traceability.tasks = traceability.tasks || {};
+  traceability.requirements = traceability.requirements || {};
+
+  const requirementEntries = Object.entries(traceability.requirements);
+  const tasks = [];
+  let nextNumber = nextTaskNumber(traceability.tasks);
+
+  if (requirementEntries.length > 0) {
+    for (const [requirementId, requirement] of requirementEntries) {
+      const existing = findTaskForRequirement(traceability.tasks, requirementId);
+      if (existing) {
+        tasks.push({
+          taskId: existing.taskId,
+          title: existing.task.title || `Implement: ${requirement.title}`,
+          requirementIds: existing.task.requirementIds || [requirementId]
+        });
+        continue;
+      }
+
+      const taskId = `TASK-${String(nextNumber).padStart(3, "0")}`;
+      const title = `Implement: ${requirement.title}`;
+      traceability.tasks[taskId] = buildTaskRecord({
+        title,
+        requirementIds: [requirementId],
+        acceptanceCriteriaIds: findAcceptanceCriteriaForRequirement(traceability, requirementId)
+      });
+      tasks.push({
+        taskId,
+        title,
+        requirementIds: [requirementId]
+      });
+      nextNumber += 1;
+    }
+  } else {
+    for (const title of buildRoadmapTasksFromPrd(prd)) {
+      const taskId = `TASK-${String(nextNumber).padStart(3, "0")}`;
+      traceability.tasks[taskId] = buildTaskRecord({
+        title,
+        requirementIds: [],
+        acceptanceCriteriaIds: []
+      });
+      tasks.push({
+        taskId,
+        title,
+        requirementIds: []
+      });
+      nextNumber += 1;
+    }
+  }
+
+  traceability.generatedAt = new Date().toISOString();
+  return { traceability, tasks };
+}
+
+function buildTaskRecord(input) {
+  return {
+    title: input.title,
+    requirementIds: input.requirementIds || [],
+    acceptanceCriteriaIds: input.acceptanceCriteriaIds || [],
+    status: "TODO",
+    dependsOn: [],
+    allowedPaths: [...DEFAULT_TASK_ALLOWED_PATHS],
+    parallelSafe: false,
+    riskLevel: "medium",
+    requiresHumanReview: true
+  };
+}
+
+function findTaskForRequirement(tasks, requirementId) {
+  for (const [taskId, task] of Object.entries(tasks || {})) {
+    if ((task.requirementIds || []).includes(requirementId)) {
+      return { taskId, task };
+    }
+  }
+  return null;
+}
+
+function findAcceptanceCriteriaForRequirement(traceability, requirementId) {
+  return Object.entries(traceability.acceptanceCriteria || {})
+    .filter(([, criterion]) => criterion.requirementId === requirementId)
+    .map(([id]) => id);
+}
+
+function nextTaskNumber(tasks) {
+  const numbers = Object.keys(tasks || {})
+    .map((id) => id.match(/^TASK-(\d+)$/))
+    .filter(Boolean)
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+  return numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+}
+
+function buildTraceabilityReport(projectDir, traceability) {
+  const requirements = traceability.requirements || {};
+  const tasks = traceability.tasks || {};
+  const evidence = traceability.evidence || [];
+  const requirementIds = new Set(Object.keys(requirements));
+  const taskEntries = Object.entries(tasks);
+  const missingRequirements = [];
+  const missingAllowedPaths = [];
+  const taskSummary = [];
+  let coveredTasks = 0;
+
+  for (const [taskId, task] of taskEntries) {
+    const taskRequirementIds = task.requirementIds || [];
+    const hasValidRequirement = taskRequirementIds.length > 0 && taskRequirementIds.every((id) => requirementIds.has(id));
+    const hasAllowedPaths = Array.isArray(task.allowedPaths) && task.allowedPaths.length > 0;
+    if (!hasValidRequirement) missingRequirements.push(taskId);
+    if (!hasAllowedPaths) missingAllowedPaths.push(taskId);
+    if (hasValidRequirement && hasAllowedPaths) coveredTasks += 1;
+    taskSummary.push({
+      taskId,
+      title: task.title || "",
+      status: task.status || "TODO",
+      requirementIds: taskRequirementIds,
+      allowedPaths: task.allowedPaths || [],
+      dependsOn: task.dependsOn || [],
+      parallelSafe: Boolean(task.parallelSafe),
+      riskLevel: task.riskLevel || "medium",
+      evidenceCount: evidence.filter((item) => item.taskId === taskId).length
+    });
+  }
+
+  return {
+    project: projectDir,
+    requirements: {
+      total: Object.keys(requirements).length,
+      byStatus: countStatusValues(Object.values(requirements))
+    },
+    tasks: {
+      total: taskEntries.length,
+      byStatus: countStatusValues(Object.values(tasks)),
+      missingRequirements,
+      missingAllowedPaths
+    },
+    evidence: {
+      total: evidence.length
+    },
+    coveragePercent: taskEntries.length === 0 ? 0 : Math.round((coveredTasks / taskEntries.length) * 100),
+    taskSummary
+  };
+}
+
+function countStatusValues(values) {
+  const result = {};
+  for (const value of values) {
+    const status = value.status || "UNKNOWN";
+    result[status] = (result[status] || 0) + 1;
+  }
+  return result;
+}
+
 function buildBranchName(config, task) {
   const prefix = config?.commitPolicy?.defaultBranchPrefix || "sadl/task-";
   return `${prefix}${slugify(task).slice(0, 60)}`;
@@ -1909,6 +2181,28 @@ function readJson(filePath) {
   }
 }
 
+function readTraceability(projectDir) {
+  const traceability = readJson(path.join(projectDir, ".sadl/traceability.json"));
+  if (traceability) {
+    traceability.requirements = traceability.requirements || {};
+    traceability.acceptanceCriteria = traceability.acceptanceCriteria || {};
+    traceability.tasks = traceability.tasks || {};
+    traceability.evidence = traceability.evidence || [];
+    return traceability;
+  }
+  return templateJson(".sadl/traceability.json", "standard");
+}
+
+function writeTraceability(projectDir, traceability) {
+  traceability.schemaVersion = traceability.schemaVersion || "1.0";
+  traceability.sadlVersion = traceability.sadlVersion || SADL_VERSION;
+  traceability.requirements = traceability.requirements || {};
+  traceability.acceptanceCriteria = traceability.acceptanceCriteria || {};
+  traceability.tasks = traceability.tasks || {};
+  traceability.evidence = traceability.evidence || [];
+  writeFile(path.join(projectDir, ".sadl/traceability.json"), `${JSON.stringify(traceability, null, 2)}\n`);
+}
+
 function readTextIfExists(filePath) {
   if (!fs.existsSync(filePath)) return "";
   return fs.readFileSync(filePath, "utf8");
@@ -1916,7 +2210,7 @@ function readTextIfExists(filePath) {
 
 function readActiveTask(projectDir) {
   const roadmap = readTextIfExists(path.join(projectDir, "docs/02_ROADMAP.md"));
-  const wip = roadmap.match(/^- \[(WIP|FAILED_TESTS|BLOCKED|WAITING_FOR_APPROVAL|NEEDS_REVIEW)\]\s+(.+)$/im);
+  const wip = roadmap.match(/^- \[(WIP|FAILED_TESTS|BLOCKED|WAITING_FOR_APPROVAL|NEEDS_REVIEW|AGENT_VERIFIED|PENDING_HUMAN_REVIEW|REJECTED)\]\s+(.+)$/im);
   if (wip) return `${wip[1]} ${wip[2].trim()}`;
   const todo = roadmap.match(/^- \[TODO\]\s+(.+)$/im);
   return todo ? `TODO ${todo[1].trim()}` : null;
@@ -2136,6 +2430,25 @@ function checkPrdTraceabilitySync(projectDir, warnings, failures) {
   return true;
 }
 
+function checkTraceabilityTaskMetadata(projectDir, options, warnings, failures) {
+  const traceability = readJson(path.join(projectDir, ".sadl/traceability.json"));
+  if (!traceability) return false;
+  const report = buildTraceabilityReport(projectDir, traceability);
+  const problems = [
+    ...report.tasks.missingRequirements.map((taskId) => `${taskId} has no valid requirement link`),
+    ...report.tasks.missingAllowedPaths.map((taskId) => `${taskId} has no allowed_paths`)
+  ];
+  if (problems.length === 0) return true;
+
+  const message = `Traceability task metadata incomplete: ${problems.join("; ")}`;
+  if (options.strict) {
+    failures.push(message);
+  } else {
+    warnings.push(message);
+  }
+  return false;
+}
+
 function checkTrackedSecrets(projectDir, failures, warnings) {
   const git = runGitMaybe(projectDir, ["ls-files"]);
   if (!git.ok) {
@@ -2193,7 +2506,7 @@ function checkState(projectDir, options, warnings, failures) {
 
 function checkRoadmap(projectDir, warnings) {
   const roadmap = readTextIfExists(path.join(projectDir, "docs/02_ROADMAP.md"));
-  if (!/\[(TODO|WIP|DONE|BLOCKED|FAILED_TESTS|NEEDS_REVIEW|WAITING_FOR_APPROVAL|SPLIT_REQUIRED|ABANDONED)\]/.test(roadmap)) {
+  if (!/\[(TODO|WIP|DONE|AGENT_VERIFIED|PENDING_HUMAN_REVIEW|ACCEPTED|REJECTED|BLOCKED|FAILED_TESTS|NEEDS_REVIEW|WAITING_FOR_APPROVAL|SPLIT_REQUIRED|ABANDONED)\]/.test(roadmap)) {
     warnings.push("Roadmap has no recognized task states.");
     return false;
   }

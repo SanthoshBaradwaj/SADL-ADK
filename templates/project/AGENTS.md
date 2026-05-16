@@ -43,7 +43,9 @@ Default writable areas:
 
 ## Execution Rules
 - Work on one roadmap item at a time.
+- Preserve `TASK-*` and requirement IDs from `docs/02_ROADMAP.md` and `.sadl/traceability.json`.
 - Keep changes scoped to the active task.
+- Keep changes inside the active task's `allowedPaths` unless a human approves an updated traceability entry.
 - Split tasks that cannot fit into one session.
 - Do not run open-ended interactive commands.
 - Do not bypass SADL command approval gates. Use `--yes` only when the human or CI policy explicitly approved that run.
@@ -56,6 +58,12 @@ Agents must use explicit commit paths:
 
 ```bash
 sadl commit . --paths src/file.ts,tests/file.test.ts --message "sadl: complete TASK-ID"
+```
+
+When checkpointing traceable work, include the task ID:
+
+```bash
+sadl checkpoint . --task-id TASK-001 --task "TASK-001 ..." --status DONE
 ```
 
 Each session must end in one of these outcomes:
