@@ -18,7 +18,7 @@ The repository protocol is portable across IDEs and models.
 AGENTS.md                  Agent operating rules
 .sadl/config.json          Team policy and validation configuration
 .sadl/traceability.json    Requirement/task/evidence ledger
-.sadl/runtime.json         Local-only session state
+.sadl/runtime.json         Local-only session state and circuit breaker counters
 .sadl/approvals.json       Local-only command and exception approvals
 .sadl/telemetry.json       Local-only token/cost telemetry
 .sadl_manifest.json        Generated hash manifest
@@ -44,6 +44,10 @@ The core CLI does not infer language-level dependency graphs. Task dependencies,
 
 `docs/03_STATE.md` is both a human handoff and a machine handoff. YAML-style frontmatter records the session id, active task, task id, requirement ids, status, blocker state, next action, model, and update timestamp. The same values are mirrored into `.sadl/runtime.json` so hosts, adapters, and future dashboards can resume without parsing prose.
 
+## Circuit Breakers
+
+Approved validation failures and timeouts are counted per active `TASK-*`. Approval denials are governance waits, not work failures. When the configured policy trips, the CLI marks the task `BLOCKED` in the traceability ledger, updates the roadmap, and rewrites `docs/03_STATE.md` with a recovery handoff. This prevents repeated test/debug loops from becoming token bleed.
+
 ## Host Adapter
 
 The host adapter is the enforcing layer. In this MVP, the host adapter is the CLI. In later integrations it can be a Codex skill, Claude hook, Cursor rule generator, IDE extension, CI action, or MCP server.
@@ -55,6 +59,7 @@ Host responsibilities:
 - Detect tracked secret-like files.
 - Generate manifests.
 - Pause on approval waits.
+- Trip task-scoped circuit breakers on repeated validation failure or timeout.
 - Enforce checkpoint and commit rules.
 - Record session receipts.
 - Switch models only at checkpoint boundaries.

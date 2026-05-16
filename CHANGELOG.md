@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added validation circuit breakers for `sadl run` and `sadl validate --run`, with task-scoped counters, timeout tracking, roadmap blocking, and machine-readable recovery handoffs.
 - Added machine-readable `docs/03_STATE.md` frontmatter and checkpoint-to-runtime synchronization for deterministic handoffs.
 - Added strict validation warnings/failures for missing or desynced handoff frontmatter.
 - Added traceable roadmap planning with `TASK-*` IDs, requirement links, default allowed paths, and task metadata in `.sadl/traceability.json`.

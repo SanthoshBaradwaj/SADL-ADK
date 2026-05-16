@@ -273,6 +273,35 @@ try {
   const logs = fs.readdirSync(path.join(project, "docs", "session_logs")).filter((file) => file.endsWith(".json"));
   assert.strictEqual(logs.length, 1, "checkpoint should write one JSON log");
 
+  const breakerConfigPath = path.join(project, ".sadl", "config.json");
+  const breakerConfig = JSON.parse(fs.readFileSync(breakerConfigPath, "utf8"));
+  breakerConfig.validation.test = ["node -e \"process.exit(1)\""];
+  breakerConfig.circuitBreakerPolicy = {
+    enabled: true,
+    maxConsecutiveFailures: 1,
+    maxCommandTimeouts: 1,
+    blockOnRepeatedError: true,
+    updateStateOnTrip: true
+  };
+  fs.writeFileSync(breakerConfigPath, `${JSON.stringify(breakerConfig, null, 2)}\n`, "utf8");
+
+  result = run(["run", project, "--category", "test", "--yes"]);
+  assert.notStrictEqual(result.status, 0, "failing validation should trip configured circuit breaker");
+  assert.match(`${result.stdout}\n${result.stderr}`, /Circuit breaker tripped/, "run should report circuit breaker trip");
+  const breakerRuntime = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "runtime.json"), "utf8"));
+  assert.strictEqual(breakerRuntime.taskMetrics["TASK-001"].consecutiveFailures, 1, "breaker should count task failures");
+  assert.match(breakerRuntime.taskMetrics["TASK-001"].blockedReason, /consecutive validation failures/, "breaker should store blocker reason");
+  const breakerState = fs.readFileSync(path.join(project, "docs", "03_STATE.md"), "utf8");
+  assert.match(breakerState, /status: "BLOCKED"/, "breaker should update handoff status");
+  assert.match(breakerState, /Circuit breaker tripped/, "breaker state should include recovery blocker");
+  traceability = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "traceability.json"), "utf8"));
+  assert.strictEqual(traceability.tasks["TASK-001"].status, "BLOCKED", "breaker should block traceability task");
+  assert.match(
+    fs.readFileSync(path.join(project, "docs", "02_ROADMAP.md"), "utf8"),
+    /\[BLOCKED\].*TASK-001/,
+    "breaker should mark roadmap task blocked"
+  );
+
   result = run(["dream", project]);
   assertOk(result, "dream");
   assert(fs.existsSync(path.join(project, "docs", "dreams")), "dreams directory should exist");

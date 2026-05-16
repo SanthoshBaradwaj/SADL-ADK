@@ -99,6 +99,14 @@
               "type": "integer",
               "minimum": 0
             },
+            "validationFailures": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "commandTimeouts": {
+              "type": "integer",
+              "minimum": 0
+            },
             "lastErrorHash": {
               "type": [
                 "string",
@@ -106,6 +114,30 @@
               ]
             },
             "lastCommandHash": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lastFailedCommand": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lastFailureAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "blockedAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "blockedReason": {
               "type": [
                 "string",
                 "null"

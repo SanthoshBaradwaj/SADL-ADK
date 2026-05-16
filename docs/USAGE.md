@@ -138,6 +138,24 @@ npx --package create-sadl-project sadl validate . --run --yes
 
 Without `--yes` or a matching local approval, SADL pauses or fails closed before executing configured commands. Use `--trust-command` only after reviewing the command and project scripts.
 
+## Circuit Breakers
+
+Validation failures are tracked against the active `TASK-*` from `docs/03_STATE.md` or `.sadl/runtime.json`.
+
+```json
+{
+  "circuitBreakerPolicy": {
+    "enabled": true,
+    "maxConsecutiveFailures": 3,
+    "maxCommandTimeouts": 1,
+    "blockOnRepeatedError": true,
+    "updateStateOnTrip": true
+  }
+}
+```
+
+If a task reaches the threshold, SADL marks the traceability task and roadmap item as `BLOCKED`, rewrites `docs/03_STATE.md` with a recovery handoff, and records the failed commands. Approval denials are not counted as validation failures.
+
 ## CI, Dashboard, And Adapters
 
 ```bash

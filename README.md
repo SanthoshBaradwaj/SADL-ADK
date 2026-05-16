@@ -29,6 +29,7 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - PRD sufficiency checks and PRD/traceability sync-locking.
 - Traceable roadmap tasks with `TASK-*` IDs, requirement links, allowed paths, and evidence records.
 - Machine-readable handoff frontmatter in `docs/03_STATE.md` synced to `.sadl/runtime.json`.
+- Validation circuit breakers that turn repeated task failures/timeouts into `[BLOCKED]` recovery state.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
@@ -345,6 +346,35 @@ updatedAt: "2026-05-16T00:00:00.000Z"
 
 The Markdown body remains human-readable. `sadl checkpoint` writes both and mirrors the same state into `.sadl/runtime.json`, so a different model or IDE can resume from the same machine-readable handoff.
 
+## Validation Circuit Breakers
+
+`sadl run` and `sadl validate --run` track approved validation failures per active `TASK-*` in `.sadl/runtime.json`. Approval denials do not count as failed work. Real command failures and timeouts increment task-scoped counters.
+
+When a configured threshold is reached, SADL:
+
+```text
+marks the task BLOCKED in .sadl/traceability.json
+marks the roadmap item [BLOCKED]
+rewrites docs/03_STATE.md with a machine-readable BLOCKED handoff
+records the failed commands for human recovery
+```
+
+Defaults live in `.sadl/config.json`:
+
+```json
+{
+  "circuitBreakerPolicy": {
+    "enabled": true,
+    "maxConsecutiveFailures": 3,
+    "maxCommandTimeouts": 1,
+    "blockOnRepeatedError": true,
+    "updateStateOnTrip": true
+  }
+}
+```
+
+This is the first local anti-token-bleed control: once the loop is proven, the task stops and the next agent receives an explicit blocker instead of retrying blindly.
+
 ## AI Workflow Configuration
 
 SADL supports a common pattern for all AI coding assistants:
@@ -657,7 +687,7 @@ git push -u origin main
 - Require human approval for architecture changes, production deploys, protected file edits, and merge conflicts.
 - Do not mark roadmap items `DONE` unless validation passes.
 - If approval is required, checkpoint as `WAITING_FOR_APPROVAL` and stop.
-- If a search, test, or debug loop repeats without progress, checkpoint as `BLOCKED_WITH_STATE`.
+- If validation repeats without progress, rely on the circuit breaker or checkpoint as `BLOCKED_WITH_STATE`.
 
 ## Real-Life Scenario
 

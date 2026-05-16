@@ -60,6 +60,13 @@
     "maxNoProgressMinutes": 10,
     "approvalWaitMode": "pause"
   },
+  "circuitBreakerPolicy": {
+    "enabled": true,
+    "maxConsecutiveFailures": 3,
+    "maxCommandTimeouts": 1,
+    "blockOnRepeatedError": true,
+    "updateStateOnTrip": true
+  },
   "tokenPolicy": {
     "hostManaged": true,
     "handoffThresholdPercent": 85,

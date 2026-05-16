@@ -108,6 +108,29 @@
       "type": "object",
       "additionalProperties": true
     },
+    "circuitBreakerPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxConsecutiveFailures": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxCommandTimeouts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blockOnRepeatedError": {
+          "type": "boolean"
+        },
+        "updateStateOnTrip": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
     "tokenPolicy": {
       "type": "object",
       "additionalProperties": true

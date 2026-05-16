@@ -50,7 +50,8 @@ Default writable areas:
 - Do not run open-ended interactive commands.
 - Do not bypass SADL command approval gates. Use `--yes` only when the human or CI policy explicitly approved that run.
 - Do not repeat the same failed command more than the configured tool budget.
-- If blocked, record the blocker in `docs/03_STATE.md` and stop.
+- If SADL marks the task `BLOCKED` after validation failures/timeouts, stop and preserve the generated recovery state.
+- If blocked manually, record the blocker in `docs/03_STATE.md` and stop.
 - If waiting for human approval, enter `WAITING_FOR_APPROVAL` and stop.
 
 ## Commit Discipline

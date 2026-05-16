@@ -146,6 +146,14 @@ const TASK_STATUS_MAP = {
   WAITING_FOR_APPROVAL: "PENDING_HUMAN_REVIEW"
 };
 
+const DEFAULT_CIRCUIT_BREAKER_POLICY = {
+  enabled: true,
+  maxConsecutiveFailures: 3,
+  maxCommandTimeouts: 1,
+  blockOnRepeatedError: true,
+  updateStateOnTrip: true
+};
+
 function main(argv) {
   const { command, args, options } = parseArgs(argv);
 
@@ -767,12 +775,16 @@ async function commandValidate(args, options) {
     });
     result.checks.validationCommandsPassed = runResult.ok;
     result.commandResults = runResult.results;
+    result.circuitBreaker = runResult.circuitBreaker;
     for (const item of runResult.results) {
       if (item.status !== 0) {
         result.failures.push(item.approvalRequired
           ? `Command approval required (${item.category}): ${item.command}`
           : `Validation command failed (${item.category}): ${item.command}`);
       }
+    }
+    if (runResult.circuitBreaker?.tripped) {
+      result.failures.push(`Circuit breaker tripped for ${runResult.circuitBreaker.taskId}: ${runResult.circuitBreaker.reason}`);
     }
     result.ok = result.failures.length === 0;
   }
@@ -812,6 +824,10 @@ async function commandRun(args, options) {
   }
 
   if (!result.ok) {
+    if (result.circuitBreaker?.tripped) {
+      console.error(`\nCircuit breaker tripped for ${result.circuitBreaker.taskId}: ${result.circuitBreaker.reason}`);
+      console.error("Task was marked BLOCKED and docs/03_STATE.md was updated for handoff recovery.");
+    }
     process.exitCode = 1;
   }
 }
@@ -1499,7 +1515,8 @@ async function executeValidationCommands(projectDir, config, options = {}) {
   const categories = options.category ? [String(options.category)] : ["lint", "typecheck", "test", "build"];
   const timeout = Number(config.validationTimeoutMs || 120000);
   const results = [];
-  const taskId = options.taskId || readRuntimeActiveTask(projectDir) || inferTaskId(readActiveTask(projectDir));
+  const taskReference = options.taskId || readRuntimeActiveTask(projectDir) || readActiveTask(projectDir);
+  const taskId = inferTaskId(taskReference);
 
   for (const category of categories) {
     const commands = validation[category] || [];
@@ -1552,10 +1569,307 @@ async function executeValidationCommands(projectDir, config, options = {}) {
     }
   }
 
+  const circuitBreaker = updateValidationCircuitBreaker(projectDir, config, {
+    taskId,
+    results
+  });
+
   return {
     ok: results.every((result) => result.status === 0),
-    results
+    results,
+    circuitBreaker
   };
+}
+
+function updateValidationCircuitBreaker(projectDir, config, input) {
+  const policy = getCircuitBreakerPolicy(config);
+  const taskId = inferTaskId(input.taskId);
+  if (!policy.enabled || !taskId) {
+    return {
+      enabled: policy.enabled,
+      tripped: false,
+      skipped: !taskId,
+      taskId: taskId || null,
+      reason: taskId ? null : "No active TASK-* ID was available for task-scoped failure tracking."
+    };
+  }
+
+  const actionableResults = (input.results || []).filter((result) => !result.approvalRequired);
+  if (actionableResults.length === 0) {
+    return {
+      enabled: true,
+      tripped: false,
+      skipped: true,
+      taskId,
+      reason: "Only approval-gate results were produced; no validation failure was counted."
+    };
+  }
+
+  const runtimePath = path.join(projectDir, ".sadl/runtime.json");
+  const runtime = readJson(runtimePath) || templateJson(".sadl/runtime.json", "standard");
+  runtime.schemaVersion = runtime.schemaVersion || "1.0";
+  runtime.sadlVersion = SADL_VERSION;
+  runtime.activeSession = runtime.activeSession || {};
+  runtime.taskMetrics = runtime.taskMetrics || {};
+  runtime.locks = runtime.locks || [];
+
+  const previous = runtime.taskMetrics[taskId] || {};
+  const metrics = {
+    consecutiveFailures: Number(previous.consecutiveFailures || 0),
+    validationFailures: Number(previous.validationFailures || 0),
+    commandTimeouts: Number(previous.commandTimeouts || 0),
+    lastErrorHash: previous.lastErrorHash || null,
+    lastCommandHash: previous.lastCommandHash || null,
+    lastFailedCommand: previous.lastFailedCommand || null,
+    lastFailureAt: previous.lastFailureAt || null,
+    blockedAt: previous.blockedAt || null,
+    blockedReason: previous.blockedReason || null,
+    lastPassedAt: previous.lastPassedAt || null
+  };
+
+  const failures = actionableResults.filter((result) => result.status !== 0);
+  if (failures.length === 0) {
+    metrics.consecutiveFailures = 0;
+    metrics.commandTimeouts = 0;
+    metrics.lastErrorHash = null;
+    metrics.lastCommandHash = null;
+    metrics.lastFailedCommand = null;
+    metrics.lastFailureAt = null;
+    metrics.blockedAt = null;
+    metrics.blockedReason = null;
+    metrics.lastPassedAt = new Date().toISOString();
+    runtime.taskMetrics[taskId] = metrics;
+    writeFile(runtimePath, `${JSON.stringify(runtime, null, 2)}\n`);
+    return {
+      enabled: true,
+      tripped: false,
+      taskId,
+      metrics
+    };
+  }
+
+  const timestamp = new Date().toISOString();
+  const errorHash = hashValidationFailures(failures);
+  const repeatedError = policy.blockOnRepeatedError &&
+    metrics.lastErrorHash === errorHash &&
+    metrics.consecutiveFailures + 1 >= policy.maxRepeatedFailures;
+  const timeoutCount = failures.filter((result) => result.timedOut).length;
+
+  metrics.consecutiveFailures += 1;
+  metrics.validationFailures += failures.length;
+  metrics.commandTimeouts += timeoutCount;
+  metrics.lastErrorHash = errorHash;
+  metrics.lastCommandHash = hashText(failures.map((result) => result.command).join("\n"));
+  metrics.lastFailedCommand = failures[0]?.command || null;
+  metrics.lastFailureAt = timestamp;
+  metrics.lastPassedAt = previous.lastPassedAt || null;
+
+  const reasons = [];
+  if (metrics.consecutiveFailures >= policy.maxConsecutiveFailures) {
+    reasons.push(`${metrics.consecutiveFailures} consecutive validation failures`);
+  }
+  if (metrics.commandTimeouts >= policy.maxCommandTimeouts) {
+    reasons.push(`${metrics.commandTimeouts} command timeout(s)`);
+  }
+  if (repeatedError) {
+    reasons.push("same validation error repeated without progress");
+  }
+
+  const tripped = reasons.length > 0;
+  if (tripped) {
+    metrics.blockedAt = timestamp;
+    metrics.blockedReason = reasons.join("; ");
+  }
+
+  runtime.taskMetrics[taskId] = metrics;
+  writeFile(runtimePath, `${JSON.stringify(runtime, null, 2)}\n`);
+
+  if (tripped) {
+    markCircuitBreakerBlocked(projectDir, {
+      taskId,
+      reason: metrics.blockedReason,
+      policy,
+      failures,
+      timestamp
+    });
+  }
+
+  return {
+    enabled: true,
+    tripped,
+    taskId,
+    reason: metrics.blockedReason,
+    metrics
+  };
+}
+
+function getCircuitBreakerPolicy(config) {
+  const configured = config?.circuitBreakerPolicy || {};
+  const budgets = config?.toolBudgets || {};
+  return {
+    enabled: configured.enabled !== false,
+    maxConsecutiveFailures: parsePositiveInteger(
+      configured.maxConsecutiveFailures,
+      parsePositiveInteger(budgets.maxFailedTestRetries, DEFAULT_CIRCUIT_BREAKER_POLICY.maxConsecutiveFailures)
+    ),
+    maxCommandTimeouts: parsePositiveInteger(configured.maxCommandTimeouts, DEFAULT_CIRCUIT_BREAKER_POLICY.maxCommandTimeouts),
+    maxRepeatedFailures: parsePositiveInteger(budgets.maxRepeatedCommand, 2),
+    blockOnRepeatedError: configured.blockOnRepeatedError !== false,
+    updateStateOnTrip: configured.updateStateOnTrip !== false
+  };
+}
+
+function hashValidationFailures(failures) {
+  return hashText(failures.map((result) => JSON.stringify({
+    category: result.category,
+    command: result.command,
+    status: result.status,
+    timedOut: Boolean(result.timedOut),
+    stderr: tailText(result.stderr, 2000),
+    stdout: tailText(result.stdout, 1000)
+  })).join("\n"));
+}
+
+function tailText(value, maxLength) {
+  const text = String(value || "");
+  return text.length <= maxLength ? text : text.slice(text.length - maxLength);
+}
+
+function markCircuitBreakerBlocked(projectDir, input) {
+  if (!input.taskId) return;
+
+  const traceability = readTraceability(projectDir);
+  const task = traceability.tasks?.[input.taskId] || null;
+  if (task) {
+    task.status = "BLOCKED";
+    task.blockedAt = input.timestamp;
+    task.blockedReason = input.reason;
+    task.lastUpdatedAt = input.timestamp;
+    traceability.tasks[input.taskId] = task;
+    traceability.evidence = [...(traceability.evidence || []), {
+      requirementId: (task.requirementIds || [])[0] || "",
+      acceptanceCriteriaIds: task.acceptanceCriteriaIds || [],
+      taskId: input.taskId,
+      filesTouched: [],
+      testsRun: input.failures.map((failure) => failure.command),
+      validationStatus: "FAILED",
+      humanAcceptance: "PENDING",
+      commitHash: getGitStatus(projectDir).head || null,
+      sessionId: `CB-${input.timestamp.replace(/[:.]/g, "-")}`,
+      recordedAt: input.timestamp,
+      blocker: input.reason
+    }];
+    writeTraceability(projectDir, traceability);
+  }
+
+  updateRoadmapTaskStatus(projectDir, input.taskId, "BLOCKED");
+
+  if (input.policy.updateStateOnTrip) {
+    writeCircuitBreakerState(projectDir, {
+      taskId: input.taskId,
+      task,
+      reason: input.reason,
+      failures: input.failures,
+      timestamp: input.timestamp
+    });
+  }
+}
+
+function updateRoadmapTaskStatus(projectDir, taskId, status) {
+  const roadmapPath = path.join(projectDir, "docs/02_ROADMAP.md");
+  const roadmap = readTextIfExists(roadmapPath);
+  if (!roadmap || !taskId) return;
+  const lines = roadmap.split(/\r?\n/);
+  let changed = false;
+  const nextLines = lines.map((line) => {
+    if (!line.includes(taskId) || !/^- \[[A-Z_]+\]/.test(line)) return line;
+    changed = true;
+    return line.replace(/^- \[[A-Z_]+\]/, `- [${status}]`);
+  });
+  if (changed) {
+    const trailingNewline = roadmap.endsWith("\n") ? "\n" : "";
+    writeFile(roadmapPath, `${nextLines.join("\n")}${trailingNewline}`);
+  }
+}
+
+function writeCircuitBreakerState(projectDir, input) {
+  const timestamp = input.timestamp;
+  const sessionId = `CB-${timestamp.replace(/[:.]/g, "-")}`;
+  const git = getGitStatus(projectDir);
+  const parsedState = parseStateFrontmatter(projectDir);
+  const taskTitle = input.task?.title ||
+    parsedState.data?.activeTask ||
+    readActiveTask(projectDir) ||
+    input.taskId;
+  const requirementIds = input.task?.requirementIds || parsedState.data?.requirementIds || [];
+  const acceptanceCriteriaIds = input.task?.acceptanceCriteriaIds || parsedState.data?.acceptanceCriteriaIds || [];
+  const commands = input.failures.map((failure) => failure.command);
+  const nextAction = "Human review required: inspect the failing validation output, adjust the task or implementation, then rerun validation.";
+
+  const frontmatter = {
+    schemaVersion: "1.0",
+    sessionId,
+    taskId: input.taskId,
+    requirementIds,
+    acceptanceCriteriaIds,
+    activeTask: taskTitle,
+    status: "BLOCKED",
+    blocked: true,
+    blocker: `Circuit breaker tripped: ${input.reason}`,
+    nextAction,
+    updatedAt: timestamp,
+    model: process.env.SADL_MODEL || "host-runner",
+    assistant: "sadl-cli",
+    validationStatus: "FAILED"
+  };
+
+  const stateBody = `# 03_STATE.md: SADL Current Session State
+
+## SESSION EXIT STATUS
+- Task Status: BLOCKED - ${taskTitle}
+- Current Blocker: Circuit breaker tripped: ${input.reason}
+- Next Exact Action: ${nextAction}
+- Updated At: ${timestamp}
+- Model/Assistant: sadl-cli
+
+## Failed Validation Commands
+${formatList(commands)}
+
+## Dirty Files
+${git.available ? formatList(git.changedFiles) : "- Git repository not initialized."}
+
+## Handoff Notes
+SADL stopped the validation loop to prevent token bleed. The next agent should not continue retrying this task until a human reviews the blocker or changes the task scope.
+`;
+
+  writeStateFile(projectDir, frontmatter, stateBody);
+  syncRuntimeFromState(projectDir, frontmatter);
+
+  const logEntry = {
+    schemaVersion: "1.0",
+    sessionId,
+    startedAt: null,
+    endedAt: timestamp,
+    model: process.env.SADL_MODEL || "host-runner",
+    assistant: "sadl-cli",
+    taskId: input.taskId,
+    requirementIds,
+    acceptanceCriteriaIds,
+    task: taskTitle,
+    status: "BLOCKED",
+    blocker: `Circuit breaker tripped: ${input.reason}`,
+    nextAction,
+    approvalsRequested: 0,
+    waitingMinutes: 0,
+    commandsRun: commands,
+    filesChanged: git.available ? git.changedFiles : [],
+    validation: "failed by circuit breaker",
+    commitHash: git.head || null,
+    notes: "Validation circuit breaker stopped repeated failure/timeout loop."
+  };
+  appendSessionLog(projectDir, logEntry);
+  writeJsonLog(projectDir, logEntry);
+  commandManifest([projectDir], { quiet: true });
 }
 
 async function ensureCommandApproved(projectDir, config, command, options = {}) {
@@ -2824,6 +3138,11 @@ function splitCsv(value) {
 function parseNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function parsePositiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
 function splitLines(value) {
