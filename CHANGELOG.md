@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added machine-readable `docs/03_STATE.md` frontmatter and checkpoint-to-runtime synchronization for deterministic handoffs.
+- Added strict validation warnings/failures for missing or desynced handoff frontmatter.
 - Added traceable roadmap planning with `TASK-*` IDs, requirement links, default allowed paths, and task metadata in `.sadl/traceability.json`.
 - Added `sadl trace` to report requirement/task/evidence coverage.
 - Added checkpoint evidence updates for traceable tasks.

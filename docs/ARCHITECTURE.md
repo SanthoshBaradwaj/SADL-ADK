@@ -40,6 +40,10 @@ Requirement -> Task -> Allowed Paths -> Validation Evidence -> Commit/Session Re
 
 The core CLI does not infer language-level dependency graphs. Task dependencies, allowed paths, and parallel-safety must be explicit in the traceability ledger.
 
+## Machine-Readable Handoff
+
+`docs/03_STATE.md` is both a human handoff and a machine handoff. YAML-style frontmatter records the session id, active task, task id, requirement ids, status, blocker state, next action, model, and update timestamp. The same values are mirrored into `.sadl/runtime.json` so hosts, adapters, and future dashboards can resume without parsing prose.
+
 ## Host Adapter
 
 The host adapter is the enforcing layer. In this MVP, the host adapter is the CLI. In later integrations it can be a Codex skill, Claude hook, Cursor rule generator, IDE extension, CI action, or MCP server.

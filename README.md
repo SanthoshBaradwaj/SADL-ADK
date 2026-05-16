@@ -28,6 +28,7 @@ SADL fixes this by storing project truth in Git-readable files and requiring eve
 - Security gates for configured command execution and path-aware commits.
 - PRD sufficiency checks and PRD/traceability sync-locking.
 - Traceable roadmap tasks with `TASK-*` IDs, requirement links, allowed paths, and evidence records.
+- Machine-readable handoff frontmatter in `docs/03_STATE.md` synced to `.sadl/runtime.json`.
 - Multi-agent and model-switch rules.
 - Review-only `dream` pass that finds repeated waste or blockers from session logs.
 - Adapter notes for Codex, Claude Code, Cursor, Kiro, Gemini, GitHub Copilot coding agent, and generic CLI agents.
@@ -323,6 +324,26 @@ The generated roadmap uses explicit task and requirement IDs:
 ```
 
 `.sadl/traceability.json` stores each task's requirement links, default `allowedPaths`, dependencies, risk level, human-review requirement, and checkpoint evidence. Agents should preserve these IDs in roadmap updates and pass `--task-id TASK-001` when checkpointing.
+
+## Machine-Readable Handoff
+
+`docs/03_STATE.md` starts with strict frontmatter that tools can parse without spending reasoning tokens on prose:
+
+```yaml
+---
+schemaVersion: "1.0"
+sessionId: "SESSION-ID"
+taskId: "TASK-001"
+requirementIds: ["FR-001"]
+activeTask: "TASK-001 Implement first workflow"
+status: "WIP"
+blocked: false
+nextAction: "Run the focused test and checkpoint again."
+updatedAt: "2026-05-16T00:00:00.000Z"
+---
+```
+
+The Markdown body remains human-readable. `sadl checkpoint` writes both and mirrors the same state into `.sadl/runtime.json`, so a different model or IDE can resume from the same machine-readable handoff.
 
 ## AI Workflow Configuration
 

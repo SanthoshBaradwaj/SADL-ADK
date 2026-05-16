@@ -13,7 +13,7 @@ This audit records the current implementation boundary for `0.2.0-next.0`.
 - `sadl intake --write`: interactive wizard for the same generated files.
 - `sadl plan --write`: creates a first roadmap with a human approval gate.
 - `sadl run`: executes configured validation commands after approval, `--yes`, or a matching local command fingerprint.
-- `sadl checkpoint`: writes current state and session logs.
+- `sadl checkpoint`: writes machine-readable `03_STATE.md` frontmatter, syncs `.sadl/runtime.json`, and records session logs.
 - `sadl dream`: analyzes session logs for repeated commands, blockers, status distribution, approval wait, and failed sessions.
 - `sadl dashboard`: generates a local static HTML dashboard.
 - `sadl policy`: lists and applies versioned policy packs.

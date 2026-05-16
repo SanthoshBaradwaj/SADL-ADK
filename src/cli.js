@@ -916,13 +916,42 @@ function commandCheckpoint(args, options) {
   }
 
   const timestamp = new Date().toISOString();
+  const sessionId = timestamp.replace(/[:.]/g, "-");
   const blocker = String(options.blocker || "None recorded.");
   const next = String(options.next || "Review state and continue the active roadmap item.");
   const model = String(options.model || process.env.SADL_MODEL || "unspecified");
+  const assistant = String(options.assistant || "unspecified");
   const git = getGitStatus(projectDir);
   const taskId = String(options.taskId || inferTaskId(task) || "");
+  const traceUpdate = updateTraceabilityFromCheckpoint(projectDir, {
+    taskId,
+    status,
+    sessionId,
+    filesChanged: git.available ? git.changedFiles : [],
+    commandsRun: splitCsv(options.commands),
+    validation: options.validation || "not recorded",
+    commitHash: git.head || null
+  });
+  const requirementIds = traceUpdate?.requirementIds?.length ? traceUpdate.requirementIds : splitCsv(options.requirementIds);
+  const acceptanceCriteriaIds = traceUpdate?.acceptanceCriteriaIds || splitCsv(options.acceptanceCriteriaIds);
+  const frontmatter = {
+    schemaVersion: "1.0",
+    sessionId,
+    taskId: taskId || null,
+    requirementIds,
+    acceptanceCriteriaIds,
+    activeTask: task,
+    status,
+    blocked: ["BLOCKED", "FAILED_TESTS", "WAITING_FOR_APPROVAL"].includes(status),
+    blocker,
+    nextAction: next,
+    updatedAt: timestamp,
+    model,
+    assistant,
+    validationStatus: inferValidationStatus(status, options.validation || "")
+  };
 
-  const state = `# 03_STATE.md: SADL Current Session State
+  const stateBody = `# 03_STATE.md: SADL Current Session State
 
 ## SESSION EXIT STATUS
 - Task Status: ${status} - ${task}
@@ -938,16 +967,19 @@ ${git.available ? formatList(git.changedFiles) : "- Git repository not initializ
 ${String(options.notes || "No additional notes.")}
 `;
 
-  writeFile(path.join(projectDir, "docs/03_STATE.md"), state);
+  writeStateFile(projectDir, frontmatter, stateBody);
+  syncRuntimeFromState(projectDir, frontmatter);
 
   const logEntry = {
     schemaVersion: "1.0",
-    sessionId: timestamp.replace(/[:.]/g, "-"),
+    sessionId,
     startedAt: options.startedAt || null,
     endedAt: timestamp,
     model,
-    assistant: options.assistant || "unspecified",
+    assistant,
     taskId: taskId || null,
+    requirementIds,
+    acceptanceCriteriaIds,
     task,
     status,
     blocker,
@@ -960,20 +992,6 @@ ${String(options.notes || "No additional notes.")}
     commitHash: git.head || null,
     notes: options.notes || ""
   };
-
-  const traceUpdate = updateTraceabilityFromCheckpoint(projectDir, {
-    taskId,
-    status,
-    sessionId: logEntry.sessionId,
-    filesChanged: logEntry.filesChanged,
-    commandsRun: logEntry.commandsRun,
-    validation: logEntry.validation,
-    commitHash: logEntry.commitHash
-  });
-  if (traceUpdate) {
-    logEntry.requirementIds = traceUpdate.requirementIds;
-    logEntry.acceptanceCriteriaIds = traceUpdate.acceptanceCriteriaIds;
-  }
 
   appendSessionLog(projectDir, logEntry);
   writeJsonLog(projectDir, logEntry);
@@ -2173,6 +2191,34 @@ function writeJsonLog(projectDir, entry) {
   writeFile(filePath, `${JSON.stringify(entry, null, 2)}\n`);
 }
 
+function writeStateFile(projectDir, frontmatter, body) {
+  const filePath = path.join(projectDir, "docs/03_STATE.md");
+  writeFile(filePath, `${serializeFrontmatter(frontmatter)}\n${body}`);
+}
+
+function syncRuntimeFromState(projectDir, frontmatter) {
+  const runtimePath = path.join(projectDir, ".sadl/runtime.json");
+  const runtime = readJson(runtimePath) || templateJson(".sadl/runtime.json", "standard");
+  runtime.schemaVersion = runtime.schemaVersion || "1.0";
+  runtime.sadlVersion = runtime.sadlVersion || SADL_VERSION;
+  runtime.activeSession = {
+    ...(runtime.activeSession || {}),
+    sessionId: frontmatter.sessionId || null,
+    agentId: frontmatter.assistant || null,
+    taskId: frontmatter.taskId || null,
+    requirementIds: frontmatter.requirementIds || [],
+    activeTask: frontmatter.activeTask || null,
+    status: frontmatter.status || null,
+    blocked: Boolean(frontmatter.blocked),
+    nextAction: frontmatter.nextAction || null,
+    startedAt: runtime.activeSession?.startedAt || frontmatter.updatedAt || null,
+    updatedAt: frontmatter.updatedAt || null
+  };
+  runtime.taskMetrics = runtime.taskMetrics || {};
+  runtime.locks = runtime.locks || [];
+  writeFile(runtimePath, `${JSON.stringify(runtime, null, 2)}\n`);
+}
+
 function readJson(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -2218,7 +2264,7 @@ function readActiveTask(projectDir) {
 
 function readRuntimeActiveTask(projectDir) {
   const runtime = readJson(path.join(projectDir, ".sadl/runtime.json"));
-  return runtime?.activeSession?.activeTask || null;
+  return runtime?.activeSession?.taskId || runtime?.activeSession?.activeTask || null;
 }
 
 function inferTaskId(value) {
@@ -2228,8 +2274,114 @@ function inferTaskId(value) {
 
 function readStateSummary(projectDir) {
   const state = readTextIfExists(path.join(projectDir, "docs/03_STATE.md"));
+  const parsed = parseFrontmatter(state);
+  if (parsed.data?.status && parsed.data?.activeTask) {
+    return `${parsed.data.status} - ${parsed.data.activeTask}`;
+  }
   const status = state.match(/Task Status:\s*(.+)/i);
   return status ? status[1].trim() : null;
+}
+
+function parseStateFrontmatter(projectDir) {
+  return parseFrontmatter(readTextIfExists(path.join(projectDir, "docs/03_STATE.md")));
+}
+
+function serializeFrontmatter(data) {
+  const lines = ["---"];
+  for (const [key, value] of Object.entries(data)) {
+    lines.push(`${key}: ${formatYamlValue(value)}`);
+  }
+  lines.push("---");
+  return lines.join("\n");
+}
+
+function parseFrontmatter(content) {
+  const text = String(content || "");
+  if (!text.startsWith("---\n") && !text.startsWith("---\r\n")) {
+    return { data: null, body: text };
+  }
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!match) return { data: null, body: text };
+  const data = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const separator = line.indexOf(":");
+    if (separator === -1) continue;
+    const key = line.slice(0, separator).trim();
+    const rawValue = line.slice(separator + 1).trim();
+    data[key] = parseYamlValue(rawValue);
+  }
+  return {
+    data,
+    body: text.slice(match[0].length)
+  };
+}
+
+function formatYamlValue(value) {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => formatYamlString(String(item))).join(", ")}]`;
+  }
+  return formatYamlString(String(value));
+}
+
+function formatYamlString(value) {
+  return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function parseYamlValue(value) {
+  if (value === "null") return null;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const inner = value.slice(1, -1).trim();
+    if (!inner) return [];
+    return splitYamlInlineArray(inner).map(parseYamlValue);
+  }
+  if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1).replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+  }
+  return value;
+}
+
+function splitYamlInlineArray(value) {
+  const parts = [];
+  let current = "";
+  let quote = null;
+  let escaped = false;
+  for (const char of value) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      current += char;
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      current += char;
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === ",") {
+      parts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
 }
 
 function parseMarkdownSections(content) {
@@ -2493,6 +2645,26 @@ function scanSecretLeaks(projectDir, warnings) {
 
 function checkState(projectDir, options, warnings, failures) {
   const state = readTextIfExists(path.join(projectDir, "docs/03_STATE.md"));
+  const parsed = parseFrontmatter(state);
+  if (!parsed.data) {
+    const message = "docs/03_STATE.md is missing machine-readable frontmatter.";
+    if (options.strict) failures.push(message);
+    else warnings.push(message);
+  } else {
+    const missing = ["schemaVersion", "sessionId", "activeTask", "status", "nextAction", "updatedAt"]
+      .filter((key) => parsed.data[key] === undefined || parsed.data[key] === null || parsed.data[key] === "");
+    if (missing.length > 0) {
+      const message = `docs/03_STATE.md frontmatter missing required fields: ${missing.join(", ")}`;
+      if (options.strict) failures.push(message);
+      else warnings.push(message);
+    }
+    const runtime = readJson(path.join(projectDir, ".sadl/runtime.json"));
+    if (runtime?.activeSession?.sessionId && parsed.data.sessionId && runtime.activeSession.sessionId !== parsed.data.sessionId) {
+      const message = "docs/03_STATE.md frontmatter is not synced with .sadl/runtime.json activeSession.";
+      if (options.strict) failures.push(message);
+      else warnings.push(message);
+    }
+  }
   if (!state.includes("SESSION EXIT STATUS")) {
     warnings.push("docs/03_STATE.md does not contain a SESSION EXIT STATUS block yet.");
     return false;

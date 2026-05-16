@@ -1,3 +1,17 @@
+---
+schemaVersion: "1.0"
+sessionId: "INIT"
+taskId: null
+requirementIds: []
+activeTask: "Project initialized"
+status: "WIP"
+blocked: false
+nextAction: "Complete docs/01_PRD.md, docs/04_ARCH_SPEC.md, and generate an approved roadmap."
+updatedAt: "generated-by-sadl-cli"
+model: "unspecified"
+assistant: "unspecified"
+---
+
 # 03_STATE.md: SADL Current Session State
 
 ## SESSION EXIT STATUS
@@ -12,4 +26,3 @@
 
 ## Handoff Notes
 This file is overwritten at session checkpoints. Historical receipts belong in `docs/05_SESSION_LOG.md` and `docs/session_logs/*.json`.
-

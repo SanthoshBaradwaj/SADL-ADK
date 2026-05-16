@@ -66,6 +66,8 @@ When checkpointing traceable work, include the task ID:
 sadl checkpoint . --task-id TASK-001 --task "TASK-001 ..." --status DONE
 ```
 
+Do not remove the frontmatter at the top of `docs/03_STATE.md`; it is the machine-readable handoff for the next model or IDE.
+
 Each session must end in one of these outcomes:
 - `DONE_COMMITTED`: validation passed and relevant files were committed.
 - `WIP_CHECKPOINTED`: work is incomplete but repo is left in a safe state.

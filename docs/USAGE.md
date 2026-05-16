@@ -108,6 +108,7 @@ Commit the relevant files if validation passes.
 
 ```bash
 sadl checkpoint . \
+  --task-id TASK-001 \
   --task "1.1 Implement login form" \
   --status DONE \
   --model "configured-coder" \
@@ -115,6 +116,8 @@ sadl checkpoint . \
   --validation "lint and tests passed" \
   --next "Start task 1.2 API session endpoint"
 ```
+
+Checkpoints write strict frontmatter to `docs/03_STATE.md` and synchronize `.sadl/runtime.json`. The frontmatter is the machine-readable handoff; the Markdown body is the human-readable summary.
 
 ## Commit
 

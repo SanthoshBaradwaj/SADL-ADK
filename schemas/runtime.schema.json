@@ -41,13 +41,46 @@
             "null"
           ]
         },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requirementIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "activeTask": {
           "type": [
             "string",
             "null"
           ]
         },
+        "status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "nextAction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "startedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedAt": {
           "type": [
             "string",
             "null"

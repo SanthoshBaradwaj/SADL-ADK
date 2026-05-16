@@ -41,6 +41,11 @@ try {
   assert(fs.existsSync(path.join(project, ".sadl", "traceability.json")), ".sadl/traceability.json should exist");
   assert(fs.existsSync(path.join(project, ".sadl", "runtime.json")), ".sadl/runtime.json should exist");
   assert(fs.existsSync(path.join(project, ".sadl_manifest.json")), "manifest should exist");
+  assert.match(
+    fs.readFileSync(path.join(project, "docs", "03_STATE.md"), "utf8"),
+    /^---\r?\nschemaVersion:/,
+    "initial state should include machine-readable frontmatter"
+  );
 
   result = spawnSync(process.execPath, [createCli, createdProject], {
     cwd: repoRoot,
@@ -253,7 +258,14 @@ try {
   ]);
   assertOk(result, "checkpoint");
   const state = fs.readFileSync(path.join(project, "docs", "03_STATE.md"), "utf8");
+  assert.match(state, /^---\r?\nschemaVersion:/, "checkpoint should preserve state frontmatter");
+  assert.match(state, /taskId: "TASK-001"/, "checkpoint frontmatter should include task ID");
+  assert.match(state, /requirementIds: \["FR-001"\]/, "checkpoint frontmatter should include requirement IDs");
   assert.match(state, /Task Status: DONE - 0.1 Complete PRD/, "checkpoint should update state");
+  const runtime = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "runtime.json"), "utf8"));
+  assert.strictEqual(runtime.activeSession.taskId, "TASK-001", "checkpoint should sync runtime task ID");
+  assert.strictEqual(runtime.activeSession.status, "DONE", "checkpoint should sync runtime status");
+  assert.deepStrictEqual(runtime.activeSession.requirementIds, ["FR-001"], "checkpoint should sync runtime requirements");
   traceability = JSON.parse(fs.readFileSync(path.join(project, ".sadl", "traceability.json"), "utf8"));
   assert.strictEqual(traceability.tasks["TASK-001"].status, "AGENT_VERIFIED", "checkpoint should update task traceability status");
   assert(traceability.evidence.some((entry) => entry.taskId === "TASK-001"), "checkpoint should write task evidence");

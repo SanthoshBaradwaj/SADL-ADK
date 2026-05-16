@@ -5,8 +5,14 @@
   "activeSession": {
     "sessionId": null,
     "agentId": null,
+    "taskId": null,
+    "requirementIds": [],
     "activeTask": null,
-    "startedAt": null
+    "status": null,
+    "blocked": false,
+    "nextAction": null,
+    "startedAt": null,
+    "updatedAt": null
   },
   "taskMetrics": {},
   "locks": []
